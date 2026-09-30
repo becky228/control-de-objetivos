@@ -102,3 +102,5 @@ Con cualquiera de las dos opciones, el archivo `public/_redirects` (y `netlify.t
 
 ## Si algo no carga
 Revisa primero que el archivo `.env` (o las variables de entorno en Netlify) tengan exactamente el `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` correctos, sin espacios extra. Es la causa más común de que la página se quede en blanco o no deje iniciar sesión.
+
+Despliegue en Vercel
