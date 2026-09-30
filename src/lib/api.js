@@ -116,7 +116,7 @@ export async function fetchCategorias() {
 
 // ---------- Puntos de mejora ----------
 export async function fetchPuntos({ desde, hasta, vid } = {}) {
-  let q = supabase.from("puntos_mejora").select("*, profiles(nombre)").order("fecha", { ascending: false });
+  let q = supabase.from("puntos_mejora").select("*, profiles!puntos_mejora_vendedora_id_fkey(nombre)").order("fecha", { ascending: false });
   if (desde) q = q.gte("fecha", desde);
   if (hasta) q = q.lte("fecha", hasta);
   if (vid) q = q.eq("vendedora_id", vid);
