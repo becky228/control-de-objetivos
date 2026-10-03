@@ -31,18 +31,18 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
 
-          <Route path="/admin" element={<ProtectedRoute rol="admin"><AdminLayout /></ProtectedRoute>}>
+          <Route path="/admin" element={<ProtectedRoute rol={["admin", "supervisor"]}><AdminLayout /></ProtectedRoute>}>
             <Route index element={<AdminDashboard />} />
-            <Route path="usuarios" element={<AdminUsuarios />} />
+            <Route path="usuarios" element={<ProtectedRoute rol="admin"><AdminUsuarios /></ProtectedRoute>} />
             <Route path="asistencia" element={<AdminAsistencia />} />
             <Route path="registro-app" element={<AdminRegistroApp />} />
             <Route path="facebook" element={<AdminFacebook />} />
             <Route path="pendientes" element={<AdminPendientes />} />
             <Route path="metas" element={<AdminMetas />} />
             <Route path="puntos-mejora" element={<AdminPuntos />} />
-            <Route path="bonificaciones" element={<AdminBonos />} />
+            <Route path="bonificaciones" element={<ProtectedRoute rol="admin"><AdminBonos /></ProtectedRoute>} />
             <Route path="auditoria" element={<AdminAuditoria />} />
-            <Route path="configuracion" element={<AdminConfiguracion />} />
+            <Route path="configuracion" element={<ProtectedRoute rol="admin"><AdminConfiguracion /></ProtectedRoute>} />
           </Route>
 
           <Route path="/vendedora" element={<ProtectedRoute rol="vendedora"><VendedoraLayout /></ProtectedRoute>}>

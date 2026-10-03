@@ -31,8 +31,8 @@ export default function RegistroApp() {
   const metaDia = (a) => {
     const w = dow(a.fecha);
     const cand = metasGlobales.filter((m) => m.vendedora_id === a.user_id && m.variable === "app" && m.dia_semana === w && m.vigente_desde <= a.fecha);
-    if (!cand.length) return 0;
-    cand.sort((x, y) => (x.vigente_desde < y.vigente_desde ? 1 : -1));
+    if (!cand.length || w === 6) return 0;
+    cand.sort((x, y) => (x.vigente_desde < y.vigente_desde ? 1 : x.vigente_desde > y.vigente_desde ? -1 : (y.id || 0) - (x.id || 0)));
     return cand[0].valor;
   };
 

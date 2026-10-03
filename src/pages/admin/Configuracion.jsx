@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { SectionHeader, Field, TextInput, SaveBtn, Tag, COLORS } from "../../components/ui.jsx";
 import { supabase } from "../../lib/supabase.js";
 import { fetchVisibilidad } from "../../lib/api.js";
+import { obtenerUbicacion } from "../../lib/geo.js";
 
 const OPCIONES_VIS = [
   { k: "asistencia", label: "Asistencia (detalle propio)" },
@@ -14,6 +15,7 @@ export default function Configuracion() {
   const [store, setStore] = useState(null);
   const [vis, setVis] = useState({});
   const [loading, setLoading] = useState(true);
+  const [gpsMsg, setGpsMsg] = useState("");
 
   const cargar = async () => {
     setLoading(true);
@@ -25,8 +27,18 @@ export default function Configuracion() {
 
   if (loading || !store) return <p className="text-sm" style={{ color: COLORS.muted }}>Cargando…</p>;
 
+  const usarMiUbicacion = async () => {
+    setGpsMsg("Obteniendo ubicación…");
+    try {
+      const { lat, lng } = await obtenerUbicacion();
+      setStore((s) => ({ ...s, lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) }));
+      setGpsMsg("Listo. Presiona \"Actualizar\" para guardarla.");
+    } catch (e) { setGpsMsg(e.message); }
+  };
+
   const guardar = async () => {
-    await supabase.from("store_settings").update({ lat: store.lat, lng: store.lng, radio_metros: store.radio_metros }).eq("id", 1);
+    const num = (x) => (x === "" || x == null ? null : Number(x));
+    await supabase.from("store_settings").update({ lat: num(store.lat), lng: num(store.lng), radio_metros: num(store.radio_metros) ?? 150 }).eq("id", 1);
     await Promise.all(Object.entries(vis).map(([k, v]) => supabase.from("visibilidad_config").update({ valor: v }).eq("clave", k)));
   };
 
@@ -40,7 +52,19 @@ export default function Configuracion() {
         <Field label="Longitud"><TextInput type="number" step="0.000001" value={store.lng ?? ""} onChange={(e) => setStore({ ...store, lng: e.target.value })} /></Field>
         <Field label="Radio permitido (metros)"><TextInput type="number" value={store.radio_metros ?? ""} onChange={(e) => setStore({ ...store, radio_metros: e.target.value })} /></Field>
       </div>
-      <p className="text-xs mb-8" style={{ color: COLORS.muted }}>Consejo: abre Google Maps, ubica tu tienda, mantén presionado el punto exacto y copia la latitud y longitud que aparecen.</p>
+      <div className="flex items-center gap-3 flex-wrap mb-2">
+        <button onClick={usarMiUbicacion} className="text-sm px-3 py-2" style={{ background: COLORS.forest, color: "#fff" }}>📍 Usar mi ubicación actual</button>
+        {store.lat != null && store.lng != null && store.lat !== "" && (
+          <a className="text-xs underline" style={{ color: COLORS.forest }} target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${store.lat},${store.lng}`}>Ver en Google Maps</a>
+        )}
+        {gpsMsg && <span className="text-xs" style={{ color: COLORS.muted }}>{gpsMsg}</span>}
+      </div>
+      {(store.lat == null || store.lat === "" || store.lng == null || store.lng === "") && (
+        <div className="p-3 mb-3 text-xs max-w-xl" style={{ background: "#FBEFD9", border: "1px solid #EFCB86", color: "#8A5A00" }}>
+          ⚠️ Todavía no hay ubicación de la tienda. Mientras no la guardes, el check-in de todas las vendedoras aparece como "Dentro del rango".
+        </div>
+      )}
+      <p className="text-xs mb-8" style={{ color: COLORS.muted }}>Lo más fácil: ve a la tienda, abre esta pantalla desde tu celular y presiona "Usar mi ubicación actual". También puedes copiar la latitud y longitud desde Google Maps (mantén presionado el punto exacto). Después presiona "Actualizar".</p>
 
       <h3 className="text-sm mb-3" style={{ color: COLORS.forest, fontWeight: 600 }}>Qué puede ver cada vendedora de sí misma</h3>
       <div className="flex flex-col gap-2 max-w-md">

@@ -4,11 +4,12 @@ import { addDays, maxISO, minISO, dow, weekStartOf, sum, cycleFor } from "./date
 function metaValorDia(rows, vendedoraId, variable, fechaISO) {
   const semanaInicio = weekStartOf(fechaISO);
   const d = dow(fechaISO);
+  if (d === 6) return 0; // domingo: no se trabaja
   const candidatos = rows.filter(
     (r) => r.vendedora_id === vendedoraId && r.variable === variable && r.dia_semana === d && r.vigente_desde <= semanaInicio
   );
   if (!candidatos.length) return 0;
-  candidatos.sort((a, b) => (a.vigente_desde < b.vigente_desde ? 1 : -1));
+  candidatos.sort((a, b) => (a.vigente_desde < b.vigente_desde ? 1 : a.vigente_desde > b.vigente_desde ? -1 : (b.id || 0) - (a.id || 0)));
   return candidatos[0].valor;
 }
 export function metaRango(rows, vendedoraId, variable, a, b) {

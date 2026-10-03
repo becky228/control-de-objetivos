@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardTitle, Tag, PrimaryBtn, Prog, Locked, COLORS, slab } from "../../components/ui.jsx";
-import DayGrid from "../../components/DayGrid.jsx";
 import { useAuth } from "../../context/AuthProvider.jsx";
 import { supabase } from "../../lib/supabase.js";
 import { fetchMetasGlobales, fetchFbLog, fetchRegistroApp, fetchVisibilidad, weekArrayFromRows, todayISO, currentWeekStart } from "../../lib/api.js";
 import { metaRango, hechoCopy, hechoApp } from "../../lib/bono.js";
 import { obtenerUbicacion, distanciaMetros } from "../../lib/geo.js";
-import { addDays, monthRange, fmtY } from "../../lib/dates.js";
+import { addDays, monthRange, fmtY, DAYS, NDIAS, sum } from "../../lib/dates.js";
 
 export default function Inicio() {
   const { profile } = useAuth();
@@ -62,6 +61,7 @@ export default function Inicio() {
   const arrApp = weekArrayFromRows(metasG.filter((m) => m.variable === "app"), weekStart);
   const hechoDia = (fecha) => hechoCopy(fbLog, profile.id, fecha, fecha);
   const hechoDiaApp = (fecha) => hechoApp(appLog, profile.id, fecha, fecha);
+  const diasSemana = DAYS.map((_, i) => addDays(weekStart, i)); // lunes a sábado
 
   return (
     <div>
@@ -90,12 +90,12 @@ export default function Inicio() {
 
       <Card style={{ marginBottom: 16 }}>
         <CardTitle>Mis objetivos de la semana</CardTitle>
-        <DayGrid totalLabel="TOTAL"
-          rows={[
-            { label: "Copy", arr: [0, 1, 2, 3, 4, 5, 6].map((i) => hechoDia(addDays(weekStart, i))) },
+        <ResumenSemana
+          filas={[
+            { grupo: "Copy", meta: arrCopy, hecho: diasSemana.map((f) => hechoDia(f)) },
+            { grupo: "App", meta: arrApp, hecho: diasSemana.map((f) => hechoDiaApp(f)) },
           ]}
         />
-        <div className="mt-2 text-xs" style={{ color: COLORS.muted }}>Meta Copy semana: {arrCopy.reduce((a, b) => a + b, 0)} · Meta App semana: {arrApp.reduce((a, b) => a + b, 0)}</div>
         <div className="mt-3 flex flex-col gap-2">
           <div className="flex items-center justify-between text-xs">
             <span style={{ color: COLORS.muted }}>Copy · mes (a la fecha)</span>
@@ -118,6 +118,43 @@ export default function Inicio() {
           </div>
         </Card>
       ) : <Locked label="Pendientes" />}
+    </div>
+  );
+}
+
+// Cuadro resumen: por cada objetivo (Copy y App) muestra la meta y lo realizado, de lunes a sábado.
+function ResumenSemana({ filas }) {
+  const th = { color: COLORS.forest, fontWeight: 500 };
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr style={{ borderBottom: `2px solid ${COLORS.forest}` }}>
+            <th className="text-left py-2 pr-2" style={th}></th>
+            {DAYS.map((d) => <th key={d} className="py-2 px-1 text-center" style={th}>{d}</th>)}
+            <th className="py-2 pl-2 text-right" style={th}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((f) => {
+            const tm = sum(f.meta.slice(0, NDIAS)), th2 = sum(f.hecho);
+            return (
+              <React.Fragment key={f.grupo}>
+                <tr style={{ borderTop: `1px solid ${COLORS.line}` }}>
+                  <td className="py-1.5 pr-2 text-xs" style={{ color: COLORS.muted }}>{f.grupo} · meta</td>
+                  {f.meta.slice(0, NDIAS).map((v, i) => <td key={i} className="px-1 text-center" style={{ color: v ? COLORS.ink : "#C9C5B4" }}>{v || "·"}</td>)}
+                  <td className="pl-2 text-right" style={{ fontFamily: slab, fontWeight: 700, color: COLORS.forest }}>{tm}</td>
+                </tr>
+                <tr style={{ borderBottom: `1px solid ${COLORS.line}` }}>
+                  <td className="py-1.5 pr-2 text-xs" style={{ color: COLORS.forest, fontWeight: 600 }}>{f.grupo} · hecho</td>
+                  {f.hecho.map((v, i) => <td key={i} className="px-1 text-center" style={{ color: v >= (f.meta[i] || 0) && f.meta[i] ? "#2F5D3A" : COLORS.ink, fontWeight: v ? 600 : 400 }}>{v || "·"}</td>)}
+                  <td className="pl-2 text-right" style={{ fontFamily: slab, fontWeight: 700, color: COLORS.amber }}>{th2}</td>
+                </tr>
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

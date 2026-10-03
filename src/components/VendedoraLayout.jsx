@@ -2,6 +2,7 @@ import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider.jsx";
 import { COLORS, slab } from "./ui.jsx";
+import InstallButton from "./InstallButton.jsx";
 
 const nav = [
   { to: "/vendedora", label: "Inicio", end: true },
@@ -20,7 +21,10 @@ export default function VendedoraLayout() {
     <div className="min-h-screen flex flex-col" style={{ background: COLORS.paper }}>
       <div className="flex items-center justify-between px-4 py-3" style={{ background: "#fff", borderBottom: `1px solid ${COLORS.line}` }}>
         <span style={{ color: COLORS.forest, fontFamily: slab, fontSize: 18, fontWeight: 700 }}>TiendaOps</span>
-        <button onClick={logout} className="text-xs px-2 py-1" style={{ color: COLORS.forest, border: `1px solid ${COLORS.forest}` }}>Salir</button>
+        <div className="flex items-center gap-2">
+          <InstallButton />
+          <button onClick={logout} className="text-xs px-2 py-1" style={{ color: COLORS.forest, border: `1px solid ${COLORS.forest}` }}>Salir</button>
+        </div>
       </div>
       <div className="flex-1 max-w-lg w-full mx-auto px-4 pb-24 pt-4">
         <Outlet />

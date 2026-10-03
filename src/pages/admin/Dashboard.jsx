@@ -2,13 +2,15 @@ import React, { useEffect, useState } from "react";
 import { SectionHeader, LedgerTable, Prog, Tag, COLORS } from "../../components/ui.jsx";
 import { fetchVendedoras, fetchMetasGlobales, fetchAsistencia, fetchFbLog, fetchRegistroApp, fetchPuntos, fetchVentas, fetchBonoConfig } from "../../lib/api.js";
 import { computeBonoVendedora, metaRango, hechoCopy, hechoApp } from "../../lib/bono.js";
-import { addDays, weekStartOf, monthRange, sum, pct } from "../../lib/dates.js";
+import { addDays, weekStartOf, monthRange, sum, pct, isoToday } from "../../lib/dates.js";
+import { useAuth } from "../../context/AuthProvider.jsx";
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
-  const today = new Date().toISOString().slice(0, 10);
+  const { profile } = useAuth();
+  const today = isoToday();
 
   useEffect(() => {
     (async () => {
@@ -31,7 +33,7 @@ export default function Dashboard() {
 
   const { vendedoras, asist, fbLog, appLog, metasGlobales, puntos, ventas, bonoConfig } = data;
   const weekStart = weekStartOf(today);
-  const weekEnd = addDays(weekStart, 6);
+  const weekEnd = addDays(weekStart, 5); // lunes a sábado
   const [ms] = monthRange(today.slice(0, 7));
   const presentes = asist.filter((a) => a.fecha === today).length;
 
@@ -60,7 +62,7 @@ export default function Dashboard() {
         <Stat label="Presentes hoy" value={`${presentes} / ${vendedoras.length}`} />
         <Stat label="Copy · cumplimiento semanal" value={`${copyPct}%`} />
         <Stat label="App · cumplimiento semanal" value={`${appPct}%`} />
-        <Stat label="Bono acumulado del mes" value={`$${sum(bonos.map((b) => b.final))}`} />
+        {profile?.rol === "admin" && <Stat label="Bono acumulado del mes" value={`$${sum(bonos.map((b) => b.final))}`} />}
       </div>
 
       <h3 className="text-sm mb-3" style={{ color: COLORS.forest, fontWeight: 600 }}>Cumplimiento de metas · semanal y mensual (a la fecha)</h3>

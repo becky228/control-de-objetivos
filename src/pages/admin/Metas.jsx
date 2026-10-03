@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { SectionHeader, Tag, PrimaryBtn, SaveBtn, COLORS, inputStyle } from "../../components/ui.jsx";
 import DayGrid from "../../components/DayGrid.jsx";
 import { fetchVendedoras, fetchCuentas, fetchMetasGlobales, fetchMetasCuenta, guardarMetaGlobal, guardarMetaCuenta, weekArrayFromRows, todayISO, currentWeekStart } from "../../lib/api.js";
-import { addDays, fmt, zeros, sum } from "../../lib/dates.js";
+import { addDays, fmt, zeros, sum, sumSemana, NDIAS } from "../../lib/dates.js";
 
 export default function Metas() {
   const today = todayISO();
@@ -63,6 +63,7 @@ export default function Metas() {
   };
 
   const guardar = async () => {
+    // 1) Lo que se editó a mano
     const ops = [];
     Object.entries(draft).forEach(([key, arr]) => {
       if (key.startsWith("global:")) {
@@ -74,6 +75,24 @@ export default function Metas() {
       }
     });
     await Promise.all(ops);
+
+    // 2) El total global de Copy de una vendedora con cuentas SIEMPRE debe ser la suma de sus cuentas.
+    //    (Antes solo se guardaba lo que se editaba en "Global", y por eso el Panel, Pendientes y el Bono
+    //    usaban un total distinto al de las metas asignadas por cuenta.)
+    const sync = [];
+    vendedoras.forEach((v) => {
+      const cu = cuentasDe(v.id);
+      if (!cu.length) return;
+      const suma = zeros();
+      cu.forEach((c) => {
+        const arr = draft[`cuenta:${c.id}`] || weekArrayFromRows(metasC.filter((m) => m.cuenta_id === c.id), s0);
+        arr.forEach((x, i) => (suma[i] += Number(x) || 0));
+      });
+      const guardado = weekArrayFromRows(metasG.filter((m) => m.vendedora_id === v.id && m.variable === "copy"), s0);
+      const igual = suma.slice(0, NDIAS).every((x, i) => x === guardado[i]);
+      if (!igual) sync.push(guardarMetaGlobal(v.id, "copy", s0, suma));
+    });
+    await Promise.all(sync);
     await cargar();
   };
 
@@ -87,7 +106,7 @@ export default function Metas() {
           <>
             <div className="flex items-center gap-2">
               <button onClick={() => setSemanaOffset(semanaOffset - 1)} className="p-1.5" style={{ border: `1px solid ${COLORS.line}`, background: "#fff" }}>◀</button>
-              <span className="text-sm px-1" style={{ color: COLORS.forest }}>Semana {fmt(s0)} – {fmt(addDays(s0, 6))}</span>
+              <span className="text-sm px-1" style={{ color: COLORS.forest }}>Semana {fmt(s0)} – {fmt(addDays(s0, 5))}</span>
               <button onClick={() => setSemanaOffset(semanaOffset + 1)} className="p-1.5" style={{ border: `1px solid ${COLORS.line}`, background: "#fff" }}>▶</button>
             </div>
             <SaveBtn onSave={guardar} label="Actualizar" />
@@ -125,7 +144,7 @@ export default function Metas() {
             <select className="text-sm px-2 py-1.5" style={inputStyle} value={selV || ""} onChange={(e) => setSelV(e.target.value)}>
               {vs.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
             </select>
-            <Tag tone="good">Total copy semanal en el global: {sum(arrGlobal(selV, "copy"))}</Tag>
+            <Tag tone="good">Total copy semanal en el global: {sumSemana(arrGlobal(selV, "copy"))}</Tag>
           </div>
           {mis.length === 0 ? (
             <p className="text-sm" style={{ color: COLORS.muted }}>Esta vendedora no tiene cuentas de Facebook asignadas (asígnalas en Cuentas Facebook).</p>
@@ -137,7 +156,7 @@ export default function Metas() {
       )}
 
       <div className="mt-5 p-3 text-xs" style={{ background: "#fff", border: `1px solid ${COLORS.line}`, color: "#6B6858" }}>
-        Si no modificas nada, cada semana nueva hereda automáticamente los objetivos de la semana anterior.
+        Si no modificas nada, cada semana nueva hereda automáticamente los objetivos de la semana anterior. Para las vendedoras con cuentas de Facebook, el total de Copy es siempre la suma de sus cuentas. Se trabaja de lunes a sábado.
       </div>
     </div>
   );

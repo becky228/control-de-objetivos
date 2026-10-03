@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { SectionHeader, LedgerTable, Tag, PrimaryBtn, FilterBar, newFilter, COLORS } from "../../components/ui.jsx";
-import { fetchVendedoras, fetchFbLog, fetchRegistroApp, fetchMetasGlobales, todayISO } from "../../lib/api.js";
+import { fetchVendedoras, fetchFbLog, fetchRegistroApp, fetchMetasGlobales, fetchVisibilidad, todayISO } from "../../lib/api.js";
+import { supabase } from "../../lib/supabase.js";
+import { useAuth } from "../../context/AuthProvider.jsx";
 import { metaRango, hechoCopy, hechoApp } from "../../lib/bono.js";
 import { monthRange, minISO, sum } from "../../lib/dates.js";
 
@@ -27,15 +29,28 @@ export default function Pendientes() {
   const [metasGlobales, setMetasGlobales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [f, setF] = useState(newFilter("mes", today));
+  const { profile } = useAuth();
+  const [visible, setVisible] = useState("admin");
+  const [visBusy, setVisBusy] = useState(false);
+  const [visErr, setVisErr] = useState("");
 
   useEffect(() => {
     (async () => {
       const vs = await fetchVendedoras();
-      const [fb, app, mg] = await Promise.all([fetchFbLog(), fetchRegistroApp(), fetchMetasGlobales(vs.map((v) => v.id))]);
+      const [fb, app, mg, vis] = await Promise.all([fetchFbLog(), fetchRegistroApp(), fetchMetasGlobales(vs.map((v) => v.id)), fetchVisibilidad()]);
+      setVisible(vis.pendientes || "admin");
       setVendedoras(vs); setFbLog(fb); setAppLog(app); setMetasGlobales(mg);
       setLoading(false);
     })();
   }, []);
+
+  const cambiarVisibilidad = async () => {
+    const nuevo = visible === "todas" ? "admin" : "todas";
+    setVisBusy(true); setVisErr("");
+    const { error } = await supabase.from("visibilidad_config").update({ valor: nuevo }).eq("clave", "pendientes");
+    if (error) setVisErr("No se pudo cambiar: " + error.message); else setVisible(nuevo);
+    setVisBusy(false);
+  };
 
   if (loading) return <p className="text-sm" style={{ color: COLORS.muted }}>Cargando…</p>;
 
@@ -57,6 +72,20 @@ export default function Pendientes() {
     <div>
       <SectionHeader eyebrow="Saldos pendientes de copy y de App" title="Pendientes"
         action={<PrimaryBtn onClick={() => descargarCSV(`pendientes_${f.mode}.csv`, headers, data)}>Exportar a Excel</PrimaryBtn>} />
+      <div className="flex items-center justify-between gap-3 flex-wrap bg-white px-3 py-2 mb-4" style={{ border: `1px solid ${COLORS.line}`, borderLeft: `3px solid ${visible === "todas" ? "#2F5D3A" : COLORS.amber}` }}>
+        <div className="text-sm">
+          {visible === "todas"
+            ? <>Las vendedoras <b>sí pueden ver</b> sus pendientes en su pantalla de inicio.</>
+            : <>Las vendedoras <b>no ven</b> sus pendientes (solo la administradora).</>}
+          {visErr && <div className="text-xs mt-1" style={{ color: COLORS.rust }}>{visErr}</div>}
+        </div>
+        {profile?.rol === "admin" && (
+          <button onClick={cambiarVisibilidad} disabled={visBusy} className="text-sm px-3 py-1.5 disabled:opacity-50"
+            style={{ background: visible === "todas" ? "#fff" : COLORS.forest, color: visible === "todas" ? COLORS.rust : "#fff", border: `1px solid ${visible === "todas" ? COLORS.rust : COLORS.forest}` }}>
+            {visBusy ? "Guardando…" : visible === "todas" ? "Ocultar a vendedoras" : "Autorizar visibilidad"}
+          </button>
+        )}
+      </div>
       <FilterBar f={f} setF={setF} vendedoras={vendedoras} />
       <LedgerTable
         columns={headers}

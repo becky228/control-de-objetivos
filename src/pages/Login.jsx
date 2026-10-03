@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider.jsx";
 import { COLORS, slab } from "../components/ui.jsx";
+import { homeDe } from "../components/ProtectedRoute.jsx";
 
 export default function Login() {
   const { session, profile, signIn } = useAuth();
@@ -10,7 +11,7 @@ export default function Login() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (session && profile) return <Navigate to={profile.rol === "admin" ? "/admin" : "/vendedora"} replace />;
+  if (session && profile) return <Navigate to={homeDe(profile.rol)} replace />;
 
   const entrar = async (e) => {
     e.preventDefault();

@@ -1,6 +1,6 @@
 import React from "react";
 import { NumIn, COLORS, slab } from "./ui.jsx";
-import { DAYS, sum } from "../lib/dates.js";
+import { DAYS, NDIAS, sum } from "../lib/dates.js";
 
 // Cuadrícula Lunes–Domingo con total. rows: [{ label, arr:[7], edit?(i,val), hint?, inTotal? }]
 export default function DayGrid({ rows, totalLabel }) {
@@ -22,12 +22,12 @@ export default function DayGrid({ rows, totalLabel }) {
                 {r.label}
                 {r.hint && <div className="text-xs" style={{ color: COLORS.muted }}>{r.hint}</div>}
               </td>
-              {r.arr.map((val, i) => (
+              {r.arr.slice(0, NDIAS).map((val, i) => (
                 <td key={i} className="px-1 py-1.5 text-center">
                   {r.edit ? <NumIn value={val} onChange={(x) => r.edit(i, x)} /> : <span style={{ color: val ? COLORS.ink : "#C9C5B4" }}>{val || "·"}</span>}
                 </td>
               ))}
-              <td className="py-2 pl-3 text-right" style={{ fontFamily: slab, fontWeight: 700, color: COLORS.forest }}>{sum(r.arr.map(Number))}</td>
+              <td className="py-2 pl-3 text-right" style={{ fontFamily: slab, fontWeight: 700, color: COLORS.forest }}>{sum(r.arr.slice(0, NDIAS).map(Number))}</td>
             </tr>
           ))}
           <tr style={{ borderTop: `2px solid ${COLORS.forest}` }}>

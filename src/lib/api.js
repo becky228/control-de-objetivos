@@ -1,5 +1,5 @@
 import { supabase } from "./supabase.js";
-import { zeros, dow, weekStartOf } from "./dates.js";
+import { zeros, dow, weekStartOf, isoToday } from "./dates.js";
 
 // ---------- Perfiles / vendedoras ----------
 export async function fetchVendedoras() {
@@ -20,7 +20,8 @@ export function weekArrayFromRows(rows, semanaInicioISO) {
   for (let d = 0; d < 7; d++) {
     const candidatos = rows.filter((r) => r.dia_semana === d && r.vigente_desde <= semanaInicioISO);
     if (candidatos.length) {
-      candidatos.sort((a, b) => (a.vigente_desde < b.vigente_desde ? 1 : -1));
+      // la más reciente; si hay dos con la misma fecha, gana la última guardada (id mayor)
+      candidatos.sort((a, b) => (a.vigente_desde < b.vigente_desde ? 1 : a.vigente_desde > b.vigente_desde ? -1 : (b.id || 0) - (a.id || 0)));
       arr[d] = candidatos[0].valor;
     }
   }
@@ -156,4 +157,4 @@ export async function fetchAuditoria({ vid } = {}) {
 }
 
 export const currentWeekStart = (todayISO) => weekStartOf(todayISO);
-export const todayISO = () => new Date().toISOString().slice(0, 10);
+export const todayISO = () => isoToday(); // fecha LOCAL (antes usaba UTC y a partir de las 20:00 en Bolivia ya era "mañana")

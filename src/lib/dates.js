@@ -59,5 +59,8 @@ export function workdays(a, b) {
 export const sum = (arr) => (arr || []).reduce((x, y) => x + (Number(y) || 0), 0);
 export const pct = (h, m) => (m ? Math.round((h / m) * 100) : 0);
 export const zeros = () => [0, 0, 0, 0, 0, 0, 0];
-export const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+// Se trabaja de lunes a sábado (6 días). Los arreglos de metas siguen teniendo 7 posiciones; la 7ª (domingo) se ignora.
+export const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+export const NDIAS = DAYS.length;
+export const sumSemana = (arr) => sum((arr || []).slice(0, NDIAS));
 export const weekStartOf = (fechaISO) => addDays(fechaISO, -dow(fechaISO));
