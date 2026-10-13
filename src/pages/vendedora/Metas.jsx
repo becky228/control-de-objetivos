@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { addDays, fmt } from "../../lib/dates.js";
 import { SectionHeader, COLORS } from "../../components/ui.jsx";
 import DayGrid from "../../components/DayGrid.jsx";
 import { useAuth } from "../../context/AuthProvider.jsx";
@@ -11,7 +12,8 @@ export default function Metas() {
   const [metasC, setMetasC] = useState([]);
   const [metasG, setMetasG] = useState([]);
   const today = todayISO();
-  const weekStart = currentWeekStart(today);
+  const [sem, setSem] = useState(0); // 0 = esta semana, -1 = anterior, 1 = siguiente
+  const weekStart = addDays(currentWeekStart(today), sem * 7);
 
   useEffect(() => {
     (async () => {
@@ -28,7 +30,12 @@ export default function Metas() {
 
   return (
     <div>
-      <SectionHeader eyebrow="Objetivo por cuenta de Facebook, esta semana" title="Mis metas" />
+      <SectionHeader eyebrow="Objetivo por cuenta de Facebook" title="Mis metas" />
+      <div className="flex items-center gap-1 mb-4">
+        <button onClick={() => setSem(sem - 1)} className="p-1.5" style={{ border: `1px solid ${COLORS.line}`, background: "#fff" }}>◀</button>
+        <span className="text-sm px-1" style={{ color: COLORS.forest }}>Semana {fmt(weekStart)} – {fmt(addDays(weekStart, 5))}{sem === 0 && <span className="text-xs ml-1" style={{ color: COLORS.muted }}>(esta semana)</span>}</span>
+        <button onClick={() => setSem(sem + 1)} className="p-1.5" style={{ border: `1px solid ${COLORS.line}`, background: "#fff" }}>▶</button>
+      </div>
       {cuentas.length === 0 ? (
         <p className="text-sm" style={{ color: COLORS.muted }}>Aún no tienes cuentas de Facebook asignadas.</p>
       ) : (

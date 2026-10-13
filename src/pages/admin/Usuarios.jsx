@@ -19,6 +19,8 @@ export default function Usuarios() {
   const [edit, setEdit] = useState(null); // { id, nombre, ingreso_fecha, bono_base, rol }
   const [subir, setSubir] = useState(null); // id pendiente de confirmar
   const [editErr, setEditErr] = useState("");
+  const [verPass, setVerPass] = useState(false);
+  const [msgPass, setMsgPass] = useState("");
   const [f, setF] = useState({ nombre: "", correo: "", pass: "", ingreso: "", rol: "vendedora" });
   const today = isoToday();
 
@@ -58,16 +60,51 @@ export default function Usuarios() {
     }
   };
 
+  const generar = () => {
+    const abc = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const bytes = crypto.getRandomValues(new Uint32Array(9));
+    const p = Array.from(bytes, (n) => abc[n % abc.length]).join("");
+    setEdit({ ...edit, pass: p }); setVerPass(true);
+  };
+
   const guardarEdicion = async (e) => {
     e.preventDefault();
     setBusy(true); setEditErr("");
-    const cambios = { nombre: edit.nombre.trim(), ingreso_fecha: edit.ingreso_fecha, bono_base: Number(edit.bono_base) || 0 };
-    if (edit.id !== yo.id) cambios.rol = edit.rol; // no te puedes quitar tu propio rol
-    const { error } = await supabase.from("profiles").update(cambios).eq("id", edit.id);
-    setBusy(false);
-    if (error) return setEditErr(error.message);
-    setEdit(null);
-    cargar();
+    try {
+      const orig = lista.find((x) => x.id === edit.id);
+      if (edit.pass && edit.pass.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
+      if (!edit.correo.trim()) throw new Error("El correo no puede quedar vacío.");
+      const cambios = { nombre: edit.nombre.trim(), ingreso_fecha: edit.ingreso_fecha, bono_base: Number(edit.bono_base) || 0 };
+      if (edit.id !== yo.id) cambios.rol = edit.rol; // no te puedes quitar tu propio rol
+      const { error } = await supabase.from("profiles").update(cambios).eq("id", edit.id);
+      if (error) throw error;
+
+      // correo y/o contraseña (solo la administradora, desde una función segura de la base de datos)
+      const correoNuevo = edit.correo.trim().toLowerCase();
+      const cambiaCorreo = correoNuevo !== (orig?.correo || "").toLowerCase();
+      if (cambiaCorreo || edit.pass) {
+        const { error: e2 } = await supabase.rpc("admin_update_credentials", {
+          uid: edit.id, new_email: cambiaCorreo ? correoNuevo : null, new_password: edit.pass || null,
+        });
+        if (e2) throw e2;
+      }
+
+      // estado (baja / reactivar): bloquea o permite el inicio de sesión; los datos se conservan
+      if (edit.id !== yo.id && (edit.estado !== orig?.estado || (edit.estado === "Baja" && edit.baja_fecha !== orig?.baja_fecha))) {
+        const { error: e3 } = await supabase.rpc("admin_set_baja", {
+          uid: edit.id, baja: edit.estado === "Baja", fecha: edit.estado === "Baja" ? (edit.baja_fecha || today) : null,
+        });
+        if (e3) throw e3;
+      }
+
+      if (edit.pass) setMsgPass(`Contraseña nueva de ${edit.nombre}: ${edit.pass}  — anótala y entrégasela; después ya no se puede ver.`);
+      setEdit(null); setVerPass(false);
+      await cargar();
+    } catch (e4) {
+      setEditErr(e4.message || "No se pudo guardar.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const subirRol = async (u) => {
@@ -79,7 +116,8 @@ export default function Usuarios() {
   };
 
   const cambiarEstado = async (id, estado) => {
-    await supabase.from("profiles").update({ estado, baja_fecha: estado === "Baja" ? today : null }).eq("id", id);
+    // marca la baja y bloquea el inicio de sesión; los datos que subió se conservan
+    await supabase.rpc("admin_set_baja", { uid: id, baja: estado === "Baja", fecha: estado === "Baja" ? today : null });
     setConfirm(null);
     cargar();
   };
@@ -113,12 +151,18 @@ export default function Usuarios() {
         </form>
       )}
 
+      {msgPass && (
+        <div className="p-3 mb-4 text-sm flex items-start justify-between gap-3" style={{ background: "#E6F0E6", border: "1px solid #B9D3B9", color: "#2F5D3A" }}>
+          <span>🔑 {msgPass}</span>
+          <button onClick={() => setMsgPass("")} className="text-xs underline">Cerrar</button>
+        </div>
+      )}
       {edit && (
         <form onSubmit={guardarEdicion} className="bg-white p-5 mb-6" style={{ border: `1px solid ${COLORS.line}`, borderLeft: `3px solid ${COLORS.forest}` }}>
           <div className="text-sm mb-3" style={{ color: COLORS.forest, fontWeight: 600 }}>Editar usuario</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Nombre"><TextInput value={edit.nombre} onChange={(e) => setEdit({ ...edit, nombre: e.target.value })} /></Field>
-            <Field label="Correo (no se puede cambiar aquí)"><TextInput value={edit.correo} disabled readOnly /></Field>
+            <Field label="Correo (con el que inicia sesión)"><TextInput type="email" value={edit.correo} onChange={(e) => setEdit({ ...edit, correo: e.target.value })} /></Field>
             <Field label="Fecha de ingreso (contratación)"><TextInput type="date" value={edit.ingreso_fecha} onChange={(e) => setEdit({ ...edit, ingreso_fecha: e.target.value })} /></Field>
             <Field label="Bono base"><TextInput type="number" value={edit.bono_base} onChange={(e) => setEdit({ ...edit, bono_base: e.target.value })} /></Field>
             <Field label="Rol">
@@ -129,7 +173,26 @@ export default function Usuarios() {
                 <option value="admin">Administradora</option>
               </select>
             </Field>
+            <Field label="Estado">
+              <select disabled={edit.id === yo.id} className="w-full px-3 py-2 text-sm disabled:opacity-60" style={{ border: `1px solid ${COLORS.line}`, background: "#FBFAF7" }}
+                value={edit.estado} onChange={(e) => setEdit({ ...edit, estado: e.target.value, baja_fecha: e.target.value === "Baja" ? (edit.baja_fecha || today) : null })}>
+                <option value="Activa">Activa</option>
+                <option value="Baja">Baja</option>
+              </select>
+            </Field>
+            <Field label="Fecha de baja"><TextInput type="date" disabled={edit.estado !== "Baja"} value={edit.baja_fecha || ""} onChange={(e) => setEdit({ ...edit, baja_fecha: e.target.value })} /></Field>
+            <div className="md:col-span-2">
+              <Field label="Contraseña">
+                <div className="flex gap-2 items-center flex-wrap">
+                  <TextInput type={verPass ? "text" : "password"} placeholder="Escribe una nueva o genérala (vacío = no cambiar)" style={{ minWidth: 240, flex: 1 }} value={edit.pass || ""} onChange={(e) => setEdit({ ...edit, pass: e.target.value })} />
+                  <GhostBtn onClick={() => setVerPass(!verPass)}>{verPass ? "Ocultar" : "Mostrar"}</GhostBtn>
+                  <GhostBtn onClick={generar}>Generar</GhostBtn>
+                </div>
+              </Field>
+              <p className="text-xs" style={{ color: COLORS.muted }}>La contraseña actual no se puede ver: se guarda cifrada y nadie puede leerla. Sí puedes poner una nueva; al guardar se muestra una vez para que se la entregues.</p>
+            </div>
           </div>
+          {edit.estado === "Baja" && <p className="text-xs mt-3" style={{ color: "#8A5A00" }}>En baja: ya no puede iniciar sesión, pero todo lo que subió (asistencia, registros, Facebook, puntos, metas) se conserva y sigue visible para ti.</p>}
           {edit.id === yo.id && <p className="text-xs mt-2" style={{ color: COLORS.muted }}>No puedes cambiar tu propio rol (así no te quedas sin acceso).</p>}
           {editErr && <p className="text-xs mt-2" style={{ color: COLORS.rust }}>{editErr}</p>}
           <div className="mt-4 flex gap-2">
@@ -147,7 +210,7 @@ export default function Usuarios() {
             u.estado === "Activa" ? cicloLabel(cycleFor(u.ingreso_fecha, today)) : "—",
             u.estado === "Activa" ? <Tag tone="good">Activa</Tag> : <Tag tone="bad">Baja · {u.baja_fecha ? fmtY(u.baja_fecha) : ""}</Tag>,
             <span className="flex items-center gap-2 flex-wrap">
-              <GhostBtn onClick={() => { setEditErr(""); setEdit({ id: u.id, nombre: u.nombre, correo: u.correo, ingreso_fecha: u.ingreso_fecha, bono_base: u.bono_base, rol: u.rol }); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Editar</GhostBtn>
+              <GhostBtn onClick={() => { setEditErr(""); setEdit({ id: u.id, nombre: u.nombre, correo: u.correo, ingreso_fecha: u.ingreso_fecha, bono_base: u.bono_base, rol: u.rol, estado: u.estado, baja_fecha: u.baja_fecha, pass: "" }); setVerPass(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Editar</GhostBtn>
               {u.estado === "Activa" && SIGUIENTE[u.rol] && u.id !== yo.id && (
                 subir === u.id
                   ? <span className="text-xs flex items-center gap-2">¿Subir a {ROLES[SIGUIENTE[u.rol]]}?
@@ -166,7 +229,7 @@ export default function Usuarios() {
           ])}
         />
       )}
-      <p className="text-xs mt-4" style={{ color: COLORS.muted }}>Al dar de baja se conserva todo su historial; solo deja de poder iniciar sesión.</p>
+      <p className="text-xs mt-4" style={{ color: COLORS.muted }}>No existe "eliminar usuario": solo "Dar de baja". Así se conserva todo su historial (asistencia, registros, Facebook, puntos y metas) y solo deja de poder iniciar sesión.</p>
     </div>
   );
 }

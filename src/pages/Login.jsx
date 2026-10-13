@@ -17,7 +17,7 @@ export default function Login() {
     e.preventDefault();
     setBusy(true); setErr("");
     const { error } = await signIn(correo.trim(), pass);
-    if (error) setErr("Correo o contraseña incorrectos.");
+    if (error) setErr(/banned/i.test(error.message || "") ? "Tu usuario está dado de baja. Habla con la administradora." : "Correo o contraseña incorrectos.");
     setBusy(false);
   };
 

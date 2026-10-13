@@ -21,6 +21,8 @@ export const fmt = (s) => {
   const d = toDate(s);
   return `${pad(d.getDate())} ${MESES[d.getMonth()]}`;
 };
+const MESES_LARGO = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+export const fmtLargo = (s) => { const d = toDate(s); return `${d.getDate()} de ${MESES_LARGO[d.getMonth()]}`; }; // "12 de octubre"
 export const fmtY = (s) => `${fmt(s)} ${toDate(s).getFullYear()}`;
 export const maxISO = (a, b) => (a > b ? a : b);
 export const minISO = (a, b) => (a < b ? a : b);

@@ -3,7 +3,7 @@ import {
   LogIn, LayoutGrid, Clock, Package, Facebook, Target, AlertTriangle, Wallet,
   ShieldCheck, MapPin, ChevronRight, ChevronLeft, Plus, CheckCircle2, XCircle,
   Users, Eye, EyeOff, Lock, ListChecks, ArrowLeft, Check, Repeat, Download,
-  UserX, UserCheck, RefreshCw,
+  UserX, UserCheck, RefreshCw, Pencil, ArrowUp, Smartphone, Settings, Crosshair, Trash2, KeyRound, CalendarDays,
 } from "lucide-react";
 
 /**
@@ -12,6 +12,16 @@ import {
  * SOLO para revisar interfaz y flujos. No hay base de datos: los datos
  * son de ejemplo (generados) y la "fecha de hoy" de la demo es el
  * sábado 26 de septiembre de 2026.
+ *
+ * NOVEDADES (ronda 2): Usuarios con todos los datos editables + cambio de contraseña ·
+ * baja sin perder información · la administradora edita/elimina/agrega CUALQUIER registro
+ * (asistencia, registro APP, Facebook, puntos de mejora) · puntos de mejora con observación ·
+ * la vendedora ve las fechas de la semana en Inicio y en Metas.
+ *
+ * NOVEDADES (ronda 1): se trabaja de lunes a sábado · rol Supervisora · Usuarios con
+ * Editar y "Subir rol" · Pendientes con "Autorizar visibilidad" · Configuración
+ * con la ubicación de la tienda · resumen de la vendedora con Copy y App ·
+ * botón "Instalar app".
  *
  * CÓMO FUNCIONA "ACTUALIZAR": todo lo que editas queda como borrador y
  * solo se guarda (y lo ven las demás pantallas y las vendedoras) al
@@ -35,7 +45,9 @@ const TODAY_ISO = "2026-09-26";
 const WEEK_START = "2026-09-21";
 const LOG_START = "2026-08-01";
 const LATE_AFTER = "08:05";
-const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+// Se trabaja de lunes a sábado (los arreglos siguen teniendo 7 posiciones; el domingo se ignora)
+const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+const NDIAS = DAYS.length;
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -44,6 +56,8 @@ const toDate = (s) => { const [y, m, d] = s.split("-").map(Number); return new D
 const addDays = (s, n) => { const d = toDate(s); d.setDate(d.getDate() + n); return iso(d); };
 const dow = (s) => (toDate(s).getDay() + 6) % 7; // 0 = lunes … 6 = domingo
 const fmt = (s) => { const d = toDate(s); return `${pad(d.getDate())} ${MESES[d.getMonth()]}`; };
+const MESES_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const fmtLargo = (s) => { const d = toDate(s); return `${d.getDate()} de ${MESES_L[d.getMonth()]}`; }; // "12 de octubre"
 const fmtY = (s) => `${fmt(s)} ${toDate(s).getFullYear()}`;
 const maxISO = (a, b) => (a > b ? a : b);
 const minISO = (a, b) => (a < b ? a : b);
@@ -120,10 +134,10 @@ const ventasInit = {
   4: { meta: 3500, logrado: 3500 }, 5: { meta: 2000, logrado: 900 },
 };
 const puntosInit = [
-  { id: 1, vid: 2, fecha: "2026-09-14", motivo: "Impuntualidad", gravedad: "Media", descuento: 5 },
-  { id: 2, vid: 3, fecha: "2026-09-19", motivo: "Impuntualidad", gravedad: "Media", descuento: 5 },
+  { id: 1, vid: 2, fecha: "2026-09-14", motivo: "Impuntualidad", gravedad: "Media", descuento: 5, observacion: "" },
+  { id: 2, vid: 3, fecha: "2026-09-19", motivo: "Impuntualidad", gravedad: "Media", descuento: 5, observacion: "" },
   { id: 3, vid: 3, fecha: "2026-09-22", motivo: "Errores en descripción", gravedad: "Media", descuento: 3 },
-  { id: 4, vid: 4, fecha: "2026-09-20", motivo: "Copy sin enlace", gravedad: "Leve", descuento: 2 },
+  { id: 4, vid: 4, fecha: "2026-09-20", motivo: "Copy sin enlace", gravedad: "Leve", descuento: 2, observacion: "" },
 ];
 const auditoriaInit = [
   { id: 1, fecha: "2026-09-25", hora: "09:14", vid: 3, accion: "Reapertura de registro diario", motivo: "Olvidó registrar 2 productos antes del cierre", admin: "Admin. Rosa Vega" },
@@ -209,7 +223,7 @@ const metaRango = (metas, key, v, a, b) => {
   const arr = metas[key]?.[v.id];
   if (!arr) return 0;
   let t = 0;
-  for (let d = maxISO(a, v.ingresoISO); d <= b; d = addDays(d, 1)) t += Number(arr[dow(d)]) || 0;
+  for (let d = maxISO(a, v.ingresoISO); d <= b; d = addDays(d, 1)) if (dow(d) < NDIAS) t += Number(arr[dow(d)]) || 0;
   return t;
 };
 const tier = (p, c) => (p >= 100 ? c.a : p >= c.min ? c.b : c.c);
@@ -436,7 +450,7 @@ function Locked({ label }) {
   );
 }
 
-// Cuadrícula Lun–Dom con total (editable o solo lectura)
+// Cuadrícula Lun–Sáb con total (editable o solo lectura)
 function DayGrid({ rows, totalLabel }) {
   const totalDia = (i) => sum(rows.filter((r) => r.inTotal !== false).map((r) => Number(r.arr[i]) || 0));
   return (
@@ -453,13 +467,13 @@ function DayGrid({ rows, totalLabel }) {
           {rows.map((r) => (
             <tr key={r.label} style={{ borderBottom: `1px solid ${line}` }}>
               <td className="py-2 pr-4" style={{ color: ink }}>{r.label}{r.hint && <div className="text-xs" style={{ color: muted }}>{r.hint}</div>}</td>
-              {r.arr.map((val, i) => (
+              {r.arr.slice(0, NDIAS).map((val, i) => (
                 <td key={i} className="px-1 py-1.5 text-center">
                   {r.edit ? <NumIn value={val === 0 ? "" : val} onChange={(x) => r.edit(i, x)} />
                     : <span style={{ color: val ? ink : "#C9C5B4" }}>{val ? val : "·"}</span>}
                 </td>
               ))}
-              <td className="py-2 pl-3 text-right" style={{ fontFamily: slab, fontWeight: 700, color: forest }}>{sum(r.arr.map(Number))}</td>
+              <td className="py-2 pl-3 text-right" style={{ fontFamily: slab, fontWeight: 700, color: forest }}>{sum(r.arr.slice(0, NDIAS).map(Number))}</td>
             </tr>
           ))}
           <tr style={{ borderTop: `2px solid ${forest}` }}>
@@ -469,6 +483,32 @@ function DayGrid({ rows, totalLabel }) {
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Eliminar con confirmación (en la app real solo la administradora; queda en Auditoría)
+function DelBtn({ onDelete, label = "Eliminar" }) {
+  const [c, setC] = useState(false);
+  return c ? (
+    <span className="text-xs flex items-center gap-2 whitespace-nowrap">¿Eliminar?
+      <button onClick={() => { onDelete(); setC(false); }} style={{ color: rust, fontWeight: 600 }}>Sí</button>
+      <button onClick={() => setC(false)} style={{ color: forest }}>No</button></span>
+  ) : (
+    <button onClick={() => setC(true)} className="text-xs flex items-center gap-1" style={{ color: rust }}><Trash2 size={12} /> {label}</button>
+  );
+}
+
+// Botón "Instalar app" (en la app real aparece solo cuando el navegador permite instalarla)
+function InstallBtn({ dark }) {
+  const [msg, setMsg] = useState(false);
+  const c = dark ? "#CFE2D9" : forest;
+  return (
+    <div>
+      <button onClick={() => setMsg(!msg)} className="text-xs px-2 py-1 flex items-center gap-1.5" style={{ color: c, border: `1px solid ${dark ? "#3E5A50" : forest}` }}>
+        <Smartphone size={12} /> Instalar app
+      </button>
+      {msg && <p className="text-xs mt-1" style={{ color: c }}>En la app real se abre el aviso de instalación del navegador. En iPhone: Compartir → Añadir a pantalla de inicio.</p>}
     </div>
   );
 }
@@ -492,6 +532,9 @@ function LoginScreen({ onLogin }) {
         <button onClick={() => onLogin("admin")} className="w-full py-2.5 text-sm mb-2 flex items-center justify-center gap-2" style={{ background: forest, color: "#fff" }}>
           <LogIn size={15} /> Entrar como Administradora
         </button>
+        <button onClick={() => onLogin("supervisora")} className="w-full py-2.5 text-sm mb-2 flex items-center justify-center gap-2" style={{ background: "#fff", color: forest, border: `1px solid ${forest}` }}>
+          <LogIn size={15} /> Entrar como Supervisora
+        </button>
         <button onClick={() => onLogin("vendedora")} className="w-full py-2.5 text-sm flex items-center justify-center gap-2" style={{ background: "#fff", color: forest, border: `1px solid ${forest}` }}>
           <LogIn size={15} /> Entrar como Vendedora
         </button>
@@ -504,28 +547,30 @@ function LoginScreen({ onLogin }) {
 // ---------- Panel Administradora ----------
 const adminNav = [
   { key: "dashboard", label: "Panel general", icon: LayoutGrid },
-  { key: "usuarios", label: "Usuarios", icon: Users },
+  { key: "usuarios", label: "Usuarios", icon: Users, soloAdmin: true },
   { key: "asistencia", label: "Asistencia", icon: Clock },
   { key: "registroapp", label: "Registro en la APP", icon: Package },
   { key: "facebook", label: "Cuentas Facebook", icon: Facebook },
   { key: "pendientes", label: "Pendientes", icon: ListChecks },
   { key: "metas", label: "Metas", icon: Target },
   { key: "puntos", label: "Puntos de mejora", icon: AlertTriangle },
-  { key: "bonificaciones", label: "Bonificaciones", icon: Wallet },
+  { key: "bonificaciones", label: "Bonificaciones", icon: Wallet, soloAdmin: true },
   { key: "auditoria", label: "Auditoría", icon: ShieldCheck },
+  { key: "configuracion", label: "Configuración", icon: Settings, soloAdmin: true },
 ];
 
-function AdminPanel({ ctx }) {
+function AdminPanel({ ctx, esAdmin = true }) {
   const [tab, setTab] = useState("dashboard");
+  const items = adminNav.filter((i) => esAdmin || !i.soloAdmin);
   return (
     <div className="min-h-full flex" style={{ background: paper }}>
       <div className="w-56 shrink-0 py-6 px-4" style={{ background: forest }}>
         <div className="px-2 mb-8">
           <div style={{ color: amber, fontFamily: slab, fontSize: 20, fontWeight: 700 }}>TiendaOps</div>
-          <div className="text-xs mt-0.5" style={{ color: "#9FC2B4" }}>Administradora</div>
+          <div className="text-xs mt-0.5" style={{ color: "#9FC2B4" }}>{esAdmin ? "Administradora" : "Supervisora"}</div>
         </div>
         <nav className="flex flex-col gap-0.5">
-          {adminNav.map((item) => {
+          {items.map((item) => {
             const Icon = item.icon;
             const active = tab === item.key;
             return (
@@ -536,6 +581,7 @@ function AdminPanel({ ctx }) {
             );
           })}
         </nav>
+        <div className="mt-6"><InstallBtn dark /></div>
       </div>
       <div className="flex-1 min-w-0 px-8 py-8">
         {tab === "dashboard" && <AdminDashboard ctx={ctx} />}
@@ -548,6 +594,7 @@ function AdminPanel({ ctx }) {
         {tab === "puntos" && <AdminPuntos ctx={ctx} />}
         {tab === "bonificaciones" && <AdminBonos ctx={ctx} />}
         {tab === "auditoria" && <AdminAuditoria ctx={ctx} />}
+        {tab === "configuracion" && <AdminConfiguracion ctx={ctx} />}
       </div>
     </div>
   );
@@ -632,12 +679,17 @@ function AdminDashboard({ ctx }) {
   );
 }
 
+const ROL_SIG = { Vendedora: "Supervisora", Supervisora: "Administradora" }; // "Subir rol"
+
 function AdminUsuarios({ ctx }) {
   const lista = ctx.D.usuarios;
   const [abierto, setAbierto] = useState(false);
   const [confirm, setConfirm] = useState(null);
+  const [subir, setSubir] = useState(null);
+  const [edit, setEdit] = useState(null);
   const [f, setF] = useState({ nombre: "", correo: "", pass: "", ingreso: "", rol: "Vendedora" });
   const inp = { border: `1px solid ${line}`, background: "#FBFAF7" };
+  const lbl = (t) => <label className="block text-xs mb-1" style={{ color: muted }}>{t}</label>;
 
   const guardar = () => {
     if (!f.nombre || !f.correo || !f.ingreso) return;
@@ -649,25 +701,39 @@ function AdminUsuarios({ ctx }) {
     ctx.setDraft("usuarios", (l) => l.map((u) => (u.id === id ? { ...u, estado, bajaISO: estado === "Baja" ? TODAY_ISO : null } : u)));
     setConfirm(null);
   };
+  const subirRol = (u) => {
+    ctx.setDraft("usuarios", (l) => l.map((x) => (x.id === u.id ? { ...x, rol: ROL_SIG[u.rol] } : x)));
+    setSubir(null);
+  };
+  const [verPass, setVerPass] = useState(false);
+  const [msgPass, setMsgPass] = useState("");
+  const generar = () => {
+    const abc = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let p = ""; for (let i = 0; i < 9; i++) p += abc[Math.floor(Math.random() * abc.length)];
+    setEdit({ ...edit, pass: p }); setVerPass(true);
+  };
+  const guardarEdicion = () => {
+    ctx.setDraft("usuarios", (l) => l.map((x) => (x.id === edit.id
+      ? { ...x, nombre: edit.nombre, correo: edit.correo, ingresoISO: edit.ingresoISO, rol: edit.rol, estado: edit.estado, bajaISO: edit.estado === "Baja" ? (edit.bajaISO || TODAY_ISO) : null }
+      : x)));
+    setMsgPass(edit.pass ? "Contraseña nueva para " + edit.nombre + ": " + edit.pass + "  (anótala y entrégasela; después ya no se puede ver)" : "");
+    setEdit(null);
+  };
 
   return (
     <div>
-      <SectionHeader eyebrow="Alta y baja de personal" title="Usuarios"
-        action={<><SaveBtn ctx={ctx} keys={["usuarios"]} /><PrimaryBtn onClick={() => setAbierto(!abierto)}><Plus size={14} /> Nueva vendedora</PrimaryBtn></>} />
+      <SectionHeader eyebrow="Alta, edición y baja de personal" title="Usuarios"
+        action={<><SaveBtn ctx={ctx} keys={["usuarios"]} /><PrimaryBtn onClick={() => setAbierto(!abierto)}><Plus size={14} /> Nuevo usuario</PrimaryBtn></>} />
       {abierto && (
         <div className="bg-white p-5 mb-6" style={{ border: `1px solid ${line}`, borderLeft: `3px solid ${amber}` }}>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-xs mb-1" style={{ color: muted }}>Nombre</label>
-              <input className="w-full px-3 py-2 text-sm" style={inp} value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></div>
-            <div><label className="block text-xs mb-1" style={{ color: muted }}>Correo</label>
-              <input className="w-full px-3 py-2 text-sm" style={inp} value={f.correo} onChange={(e) => setF({ ...f, correo: e.target.value })} /></div>
-            <div><label className="block text-xs mb-1" style={{ color: muted }}>Contraseña temporal</label>
-              <input className="w-full px-3 py-2 text-sm" style={inp} value={f.pass} onChange={(e) => setF({ ...f, pass: e.target.value })} /></div>
-            <div><label className="block text-xs mb-1" style={{ color: muted }}>Fecha de ingreso (contratación)</label>
-              <input type="date" className="w-full px-3 py-2 text-sm" style={inp} value={f.ingreso} onChange={(e) => setF({ ...f, ingreso: e.target.value })} /></div>
-            <div><label className="block text-xs mb-1" style={{ color: muted }}>Rol</label>
+            <div>{lbl("Nombre")}<input className="w-full px-3 py-2 text-sm" style={inp} value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></div>
+            <div>{lbl("Correo")}<input className="w-full px-3 py-2 text-sm" style={inp} value={f.correo} onChange={(e) => setF({ ...f, correo: e.target.value })} /></div>
+            <div>{lbl("Contraseña temporal")}<input className="w-full px-3 py-2 text-sm" style={inp} value={f.pass} onChange={(e) => setF({ ...f, pass: e.target.value })} /></div>
+            <div>{lbl("Fecha de ingreso (contratación)")}<input type="date" className="w-full px-3 py-2 text-sm" style={inp} value={f.ingreso} onChange={(e) => setF({ ...f, ingreso: e.target.value })} /></div>
+            <div>{lbl("Rol")}
               <select className="w-full px-3 py-2 text-sm" style={inp} value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value })}>
-                <option>Vendedora</option><option>Administradora</option>
+                <option>Vendedora</option><option>Supervisora</option><option>Administradora</option>
               </select></div>
           </div>
           <p className="text-xs mt-3" style={{ color: muted }}>
@@ -676,22 +742,103 @@ function AdminUsuarios({ ctx }) {
           <div className="mt-4"><PrimaryBtn onClick={guardar}><Check size={14} /> Agregar a la lista</PrimaryBtn></div>
         </div>
       )}
+      {msgPass && (
+        <div className="p-3 mb-4 text-sm flex items-start justify-between gap-3" style={{ background: "#E6F0E6", border: "1px solid #B9D3B9", color: "#2F5D3A" }}>
+          <span><KeyRound size={14} className="inline mr-1" />{msgPass}</span>
+          <button onClick={() => setMsgPass("")} className="text-xs underline">Cerrar</button>
+        </div>
+      )}
+      {edit && (
+        <div className="bg-white p-5 mb-6" style={{ border: `1px solid ${line}`, borderLeft: `3px solid ${forest}` }}>
+          <div className="text-sm mb-3" style={{ color: forest, fontWeight: 600 }}>Editar usuario · todos sus datos</div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>{lbl("Nombre")}<input className="w-full px-3 py-2 text-sm" style={inp} value={edit.nombre} onChange={(e) => setEdit({ ...edit, nombre: e.target.value })} /></div>
+            <div>{lbl("Correo (con el que inicia sesión)")}<input className="w-full px-3 py-2 text-sm" style={inp} value={edit.correo} onChange={(e) => setEdit({ ...edit, correo: e.target.value })} /></div>
+            <div>{lbl("Fecha de ingreso (contratación)")}<input type="date" className="w-full px-3 py-2 text-sm" style={inp} value={edit.ingresoISO} onChange={(e) => setEdit({ ...edit, ingresoISO: e.target.value })} /></div>
+            <div>{lbl("Rol")}
+              <select className="w-full px-3 py-2 text-sm" style={inp} value={edit.rol} onChange={(e) => setEdit({ ...edit, rol: e.target.value })}>
+                <option>Vendedora</option><option>Supervisora</option><option>Administradora</option>
+              </select></div>
+            <div>{lbl("Estado")}
+              <select className="w-full px-3 py-2 text-sm" style={inp} value={edit.estado} onChange={(e) => setEdit({ ...edit, estado: e.target.value, bajaISO: e.target.value === "Baja" ? (edit.bajaISO || TODAY_ISO) : null })}>
+                <option>Activa</option><option>Baja</option>
+              </select></div>
+            <div>{lbl("Fecha de baja")}<input type="date" disabled={edit.estado !== "Baja"} className="w-full px-3 py-2 text-sm disabled:opacity-50" style={inp} value={edit.bajaISO || ""} onChange={(e) => setEdit({ ...edit, bajaISO: e.target.value })} /></div>
+            <div className="col-span-2">{lbl("Contraseña")}
+              <div className="flex gap-2 items-center flex-wrap">
+                <input type={verPass ? "text" : "password"} placeholder="Escribe una nueva o genérala (vacío = no cambiar)" className="px-3 py-2 text-sm flex-1" style={{ ...inp, minWidth: 240 }} value={edit.pass || ""} onChange={(e) => setEdit({ ...edit, pass: e.target.value })} />
+                <button onClick={() => setVerPass(!verPass)} className="p-2" style={{ border: `1px solid ${line}`, background: "#fff", color: forest }}>{verPass ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                <button onClick={generar} className="text-xs px-3 py-2 flex items-center gap-1" style={{ border: `1px solid ${forest}`, color: forest, background: "#fff" }}><KeyRound size={13} /> Generar</button>
+              </div>
+              <p className="text-xs mt-1" style={{ color: muted }}>La contraseña actual no se puede ver: se guarda cifrada y nadie, ni Supabase, puede leerla. Sí puedes poner una nueva; al guardar se muestra una vez para que se la entregues.</p>
+            </div>
+          </div>
+          {edit.estado === "Baja" && <p className="text-xs mt-3" style={{ color: "#8A5A00" }}>En baja: ya no puede iniciar sesión, pero TODO lo que subió (asistencia, registros, Facebook, puntos, metas) se conserva y sigue visible para ti.</p>}
+          <div className="mt-4 flex gap-2">
+            <PrimaryBtn onClick={guardarEdicion}><Check size={14} /> Guardar cambios</PrimaryBtn>
+            <button onClick={() => { setEdit(null); setVerPass(false); }} className="text-sm px-3 py-2" style={{ border: `1px solid ${forest}`, color: forest, background: "#fff" }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
       <LedgerTable
         columns={["Nombre", "Correo", "Rol", "Fecha de ingreso", "Período de pago actual", "Estado", ""]}
         rows={lista.map((u) => [
-          u.nombre, u.correo, u.rol, fmtY(u.ingresoISO),
+          u.nombre, u.correo,
+          <Tag tone={u.rol === "Vendedora" ? "neutral" : "warn"}>{u.rol}</Tag>,
+          fmtY(u.ingresoISO),
           u.estado === "Activa" ? cicloLabel(cycleFor(u.ingresoISO, TODAY_ISO)) : "—",
           u.estado === "Activa" ? <Tag tone="good">Activa</Tag> : <Tag tone="bad">Baja · {fmtY(u.bajaISO)}</Tag>,
-          u.estado === "Activa"
-            ? (confirm === u.id
-              ? <span className="text-xs flex items-center gap-2">¿Dar de baja?
-                <button onClick={() => cambiar(u.id, "Baja")} style={{ color: rust, fontWeight: 600 }}>Sí</button>
-                <button onClick={() => setConfirm(null)} style={{ color: forest }}>No</button></span>
-              : <button onClick={() => setConfirm(u.id)} className="text-xs flex items-center gap-1" style={{ color: rust }}><UserX size={13} /> Dar de baja</button>)
-            : <button onClick={() => cambiar(u.id, "Activa")} className="text-xs flex items-center gap-1" style={{ color: forest }}><UserCheck size={13} /> Reactivar</button>,
+          <span className="flex items-center gap-3 flex-wrap">
+            <button onClick={() => { setEdit({ ...u, pass: "" }); setVerPass(false); }} className="text-xs flex items-center gap-1" style={{ color: forest }}><Pencil size={12} /> Editar</button>
+            {u.estado === "Activa" && ROL_SIG[u.rol] && (
+              subir === u.id
+                ? <span className="text-xs flex items-center gap-2">¿Subir a {ROL_SIG[u.rol]}?
+                    <button onClick={() => subirRol(u)} style={{ color: forest, fontWeight: 600 }}>Sí</button>
+                    <button onClick={() => setSubir(null)} style={{ color: rust }}>No</button></span>
+                : <button onClick={() => setSubir(u.id)} className="text-xs flex items-center gap-1" style={{ color: forest }}><ArrowUp size={12} /> Subir a {ROL_SIG[u.rol]}</button>
+            )}
+            {u.estado === "Activa"
+              ? (confirm === u.id
+                ? <span className="text-xs flex items-center gap-2">¿Dar de baja?
+                    <button onClick={() => cambiar(u.id, "Baja")} style={{ color: rust, fontWeight: 600 }}>Sí</button>
+                    <button onClick={() => setConfirm(null)} style={{ color: forest }}>No</button></span>
+                : <button onClick={() => setConfirm(u.id)} className="text-xs flex items-center gap-1" style={{ color: rust }}><UserX size={13} /> Dar de baja</button>)
+              : <button onClick={() => cambiar(u.id, "Activa")} className="text-xs flex items-center gap-1" style={{ color: forest }}><UserCheck size={13} /> Reactivar</button>}
+          </span>,
         ])}
       />
-      <p className="text-xs mt-4" style={{ color: muted }}>Al dar de baja se conserva todo su historial; solo deja de aparecer como personal activo. Presiona Actualizar para guardar.</p>
+      <p className="text-xs mt-4" style={{ color: muted }}>No existe "eliminar usuario": solo "Dar de baja". Así nada de lo que subieron se pierde (en la base de datos además queda protegido contra borrados). La supervisora trabaja con Asistencia, Registro App, Facebook, Pendientes, Metas y Puntos de mejora; no ve Usuarios, Bonificaciones ni Configuración. Presiona Actualizar para guardar.</p>
+    </div>
+  );
+}
+
+function AdminConfiguracion({ ctx }) {
+  const [loc, setLoc] = useState({ lat: "", lng: "", radio: 150 });
+  const [msg, setMsg] = useState("");
+  const sinUbic = loc.lat === "" || loc.lng === "";
+  const inp = { border: `1px solid ${line}`, background: "#FBFAF7" };
+  const usar = () => { setLoc({ ...loc, lat: -17.393838, lng: -66.156946 }); setMsg('Ubicación obtenida (ejemplo). Presiona "Actualizar" para guardarla.'); };
+  return (
+    <div>
+      <SectionHeader eyebrow="Ubicación de la tienda para el check-in por GPS" title="Configuración"
+        action={<button onClick={() => setMsg("✓ Guardado (simulado)")} className="text-sm px-3 py-2 flex items-center gap-1.5" style={{ background: "#fff", color: forest, border: `1px solid ${forest}` }}><RefreshCw size={14} /> Actualizar</button>} />
+      <div className="grid grid-cols-3 gap-4 mb-4 max-w-xl">
+        <div><label className="block text-xs mb-1" style={{ color: muted }}>Latitud</label><input className="w-full px-3 py-2 text-sm" style={inp} value={loc.lat} onChange={(e) => setLoc({ ...loc, lat: e.target.value })} /></div>
+        <div><label className="block text-xs mb-1" style={{ color: muted }}>Longitud</label><input className="w-full px-3 py-2 text-sm" style={inp} value={loc.lng} onChange={(e) => setLoc({ ...loc, lng: e.target.value })} /></div>
+        <div><label className="block text-xs mb-1" style={{ color: muted }}>Radio (metros)</label><input className="w-full px-3 py-2 text-sm" style={inp} value={loc.radio} onChange={(e) => setLoc({ ...loc, radio: e.target.value })} /></div>
+      </div>
+      <div className="flex items-center gap-3 flex-wrap mb-3">
+        <PrimaryBtn onClick={usar}><Crosshair size={14} /> Usar mi ubicación actual</PrimaryBtn>
+        {!sinUbic && <span className="text-xs underline" style={{ color: forest }}>Ver en Google Maps</span>}
+        {msg && <span className="text-xs" style={{ color: muted }}>{msg}</span>}
+      </div>
+      {sinUbic && (
+        <div className="p-3 text-xs max-w-xl mb-3" style={{ background: "#FBEFD9", border: "1px solid #EFCB86", color: "#8A5A00" }}>
+          ⚠️ Todavía no hay ubicación de la tienda. Mientras no la guardes, el check-in de todas las vendedoras aparece como "Dentro del rango".
+        </div>
+      )}
+      <p className="text-xs" style={{ color: muted }}>Lo más fácil: ve a la tienda, abre esta pantalla desde tu celular y presiona "Usar mi ubicación actual".</p>
     </div>
   );
 }
@@ -699,29 +846,56 @@ function AdminUsuarios({ ctx }) {
 function AdminAsistencia({ ctx }) {
   const [f, setF] = useState(newFilter("mes"));
   const [back, setBack] = useState(0);
+  const [nv, setNv] = useState({ vid: 0, fecha: TODAY_ISO, entrada: "08:00", salida: "" });
+  const puedeBorrar = ctx.esAdmin !== false;
   const A = ctx.D.asist;
   const rows = A.filter((a) => passes(f, a.fecha, a.vid)).sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : a.vid - b.vid));
   const vs = vendedoras.filter((v) => !f.vid || v.id === f.vid);
   const edit = (id, campo, val) => ctx.setDraft("asist", (l) => l.map((a) => (a.id === id ? { ...a, [campo]: val } : a)));
+  const del = (id) => ctx.setDraft("asist", (l) => l.filter((a) => a.id !== id));
+  const dup = (a) => A.some((x) => x.id !== a.id && x.vid === a.vid && x.fecha === a.fecha);
+  const agregar = () => {
+    if (!nv.vid || !nv.fecha || !nv.entrada) return;
+    ctx.setDraft("asist", (l) => [...l, { id: "a" + Date.now(), vid: nv.vid, fecha: nv.fecha, entrada: nv.entrada, salida: nv.salida, gps: "Dentro del rango" }]);
+    setNv({ vid: 0, fecha: TODAY_ISO, entrada: "08:00", salida: "" });
+  };
   const tin = { border: `1px solid ${line}`, background: "#FBFAF7", width: 96 };
+  const sel = { border: `1px solid ${line}`, background: "#FBFAF7" };
 
   return (
     <div>
       <SectionHeader eyebrow="Control diario y resumen por período de pago" title="Asistencia"
         action={<><VisToggle k="asistencia" ctx={ctx} /><SaveBtn ctx={ctx} keys={["asist", "vis"]} /></>} />
+
+      <div className="bg-white p-4 mb-5" style={{ border: `1px solid ${line}`, borderLeft: `3px solid ${amber}` }}>
+        <div className="text-sm mb-3" style={{ color: forest, fontWeight: 600 }}>Agregar registro manual (por si olvidó marcar)</div>
+        <div className="flex gap-2 flex-wrap items-end">
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Vendedora</label>
+            <select className="px-2 py-2 text-sm" style={{ ...sel, minWidth: 150 }} value={nv.vid} onChange={(e) => setNv({ ...nv, vid: Number(e.target.value) })}>
+              <option value={0}>Elegir…</option>{vendedoras.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+            </select></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Fecha</label><input type="date" className="px-2 py-2 text-sm" style={sel} value={nv.fecha} onChange={(e) => setNv({ ...nv, fecha: e.target.value })} /></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Entrada</label><input type="time" className="px-2 py-2 text-sm" style={sel} value={nv.entrada} onChange={(e) => setNv({ ...nv, entrada: e.target.value })} /></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Salida</label><input type="time" className="px-2 py-2 text-sm" style={sel} value={nv.salida} onChange={(e) => setNv({ ...nv, salida: e.target.value })} /></div>
+          <PrimaryBtn onClick={agregar}><Plus size={14} /> Agregar</PrimaryBtn>
+        </div>
+      </div>
+
       <FilterBar f={f} setF={setF} />
 
       <h3 className="text-sm mb-1" style={{ color: forest, fontWeight: 600 }}>Detalle diario</h3>
-      <p className="text-xs mb-3" style={{ color: muted }}>Las vendedoras registran hasta las 00:00; pasada esa hora solo la administradora puede modificar (cada cambio queda en Auditoría).</p>
+      <p className="text-xs mb-3" style={{ color: muted }}>Puedes cambiar cualquier dato: fecha, vendedora, horas, ubicación, o eliminar el registro. Cada cambio queda en Auditoría.</p>
       <LedgerTable maxH={300}
-        columns={["Fecha", "Vendedora", "Entrada", "Salida", "Ubicación", "Puntualidad", "Registro"]}
+        columns={["Fecha", "Vendedora", "Entrada", "Salida", "Ubicación", "Puntualidad", "Registro", ""]}
         rows={rows.map((a) => [
-          fmtY(a.fecha), nombreDe(a.vid),
+          <span className="flex items-center gap-1"><input type="date" className="text-sm px-1 py-0.5" style={sel} value={a.fecha} onChange={(e) => edit(a.id, "fecha", e.target.value)} />{dup(a) && <Tag tone="bad">duplicado</Tag>}</span>,
+          <select className="text-sm px-1 py-0.5" style={sel} value={a.vid} onChange={(e) => edit(a.id, "vid", Number(e.target.value))}>{vendedoras.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}</select>,
           <input type="time" className="text-sm px-1 py-0.5" style={tin} value={a.entrada} onChange={(e) => edit(a.id, "entrada", e.target.value)} />,
           <input type="time" className="text-sm px-1 py-0.5" style={tin} value={a.salida} onChange={(e) => edit(a.id, "salida", e.target.value)} />,
-          gpsTag(a.gps),
+          <select className="text-sm px-1 py-0.5" style={sel} value={a.gps} onChange={(e) => edit(a.id, "gps", e.target.value)}><option>Dentro del rango</option><option>Fuera del rango</option></select>,
           a.entrada > LATE_AFTER ? <Tag tone="warn">Retraso</Tag> : <Tag tone="good">A tiempo</Tag>,
           cierreTag(a.fecha),
+          puedeBorrar ? <DelBtn onDelete={() => del(a.id)} /> : "",
         ])}
       />
 
@@ -754,21 +928,49 @@ function AdminAsistencia({ ctx }) {
 
 function AdminRegistroApp({ ctx }) {
   const [f, setF] = useState(newFilter("mes"));
+  const [nv, setNv] = useState({ vid: 0, fecha: TODAY_ISO, registrados: "" });
+  const puedeBorrar = ctx.esAdmin !== false;
   const L = ctx.D.appLog;
   const rows = L.filter((a) => passes(f, a.fecha, a.vid)).sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : a.vid - b.vid));
   const metaDia = (a) => ctx.metas.app?.[a.vid]?.[dow(a.fecha)] || 0;
-  const edit = (id, val) => ctx.setDraft("appLog", (l) => l.map((a) => (a.id === id ? { ...a, registrados: val === "" ? 0 : val } : a)));
+  const upd = (id, campo, val) => ctx.setDraft("appLog", (l) => l.map((a) => (a.id === id ? { ...a, [campo]: val } : a)));
+  const del = (id) => ctx.setDraft("appLog", (l) => l.filter((a) => a.id !== id));
+  const dup = (a) => L.some((x) => x.id !== a.id && x.vid === a.vid && x.fecha === a.fecha);
+  const agregar = () => {
+    if (!nv.vid || !nv.fecha || nv.registrados === "") return;
+    ctx.setDraft("appLog", (l) => [...l, { id: "r" + Date.now(), vid: nv.vid, fecha: nv.fecha, registrados: Number(nv.registrados) }]);
+    setNv({ vid: 0, fecha: TODAY_ISO, registrados: "" });
+  };
+  const sel = { border: `1px solid ${line}`, background: "#FBFAF7" };
   return (
     <div>
       <SectionHeader eyebrow="Productos registrados en la app de control de inventario" title="Registro en la APP"
         action={<SaveBtn ctx={ctx} keys={["appLog"]} />} />
+      <div className="bg-white p-4 mb-5" style={{ border: `1px solid ${line}`, borderLeft: `3px solid ${amber}` }}>
+        <div className="text-sm mb-3" style={{ color: forest, fontWeight: 600 }}>Agregar registro manual</div>
+        <div className="flex gap-2 flex-wrap items-end">
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Vendedora</label>
+            <select className="px-2 py-2 text-sm" style={{ ...sel, minWidth: 150 }} value={nv.vid} onChange={(e) => setNv({ ...nv, vid: Number(e.target.value) })}>
+              <option value={0}>Elegir…</option>{vendedoras.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+            </select></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Fecha</label><input type="date" className="px-2 py-2 text-sm" style={sel} value={nv.fecha} onChange={(e) => setNv({ ...nv, fecha: e.target.value })} /></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Registrados</label><NumIn w={70} value={nv.registrados} onChange={(x) => setNv({ ...nv, registrados: x })} /></div>
+          <PrimaryBtn onClick={agregar}><Plus size={14} /> Agregar</PrimaryBtn>
+        </div>
+      </div>
       <FilterBar f={f} setF={setF} />
-      <p className="text-xs mb-3" style={{ color: muted }}>Las vendedoras registran hasta las 00:00; después solo la administradora puede corregir el número (queda en Auditoría).</p>
+      <p className="text-xs mb-3" style={{ color: muted }}>Puedes cambiar fecha, vendedora y cantidad de cualquier registro, o eliminarlo (queda en Auditoría).</p>
       <LedgerTable maxH={420}
-        columns={["Fecha", "Vendedora", "Registrados", "Meta del día", "Progreso", "Registro"]}
+        columns={["Fecha", "Vendedora", "Registrados", "Meta del día", "Progreso", "Registro", ""]}
         rows={[
-          ...rows.map((a) => [fmtY(a.fecha), nombreDe(a.vid), <NumIn w={60} value={a.registrados} onChange={(x) => edit(a.id, x)} />, metaDia(a), <Prog hecho={+a.registrados || 0} meta={metaDia(a)} />, cierreTag(a.fecha)]),
-          ...(rows.length ? [[<b>Total</b>, "", <b>{sum(rows.map((a) => +a.registrados || 0))}</b>, <b>{sum(rows.map(metaDia))}</b>, <Prog hecho={sum(rows.map((a) => +a.registrados || 0))} meta={sum(rows.map(metaDia))} />, ""]] : []),
+          ...rows.map((a) => [
+            <span className="flex items-center gap-1"><input type="date" className="text-sm px-1 py-0.5" style={sel} value={a.fecha} onChange={(e) => upd(a.id, "fecha", e.target.value)} />{dup(a) && <Tag tone="bad">duplicado</Tag>}</span>,
+            <select className="text-sm px-1 py-0.5" style={sel} value={a.vid} onChange={(e) => upd(a.id, "vid", Number(e.target.value))}>{vendedoras.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}</select>,
+            <NumIn w={60} value={a.registrados} onChange={(x) => upd(a.id, "registrados", x === "" ? 0 : x)} />,
+            metaDia(a), <Prog hecho={+a.registrados || 0} meta={metaDia(a)} />, cierreTag(a.fecha),
+            puedeBorrar ? <DelBtn onDelete={() => del(a.id)} /> : "",
+          ]),
+          ...(rows.length ? [[<b>Total</b>, "", <b>{sum(rows.map((a) => +a.registrados || 0))}</b>, <b>{sum(rows.map(metaDia))}</b>, <Prog hecho={sum(rows.map((a) => +a.registrados || 0))} meta={sum(rows.map(metaDia))} />, "", ""]] : []),
         ]}
       />
     </div>
@@ -885,16 +1087,18 @@ function FbTracker({ ctx, cuenta, mode, initFilter }) {
   const [ini, setIni] = useState("");
   const [fin, setFin] = useState("");
   const [tot, setTot] = useState("");
+  const [fecha, setFecha] = useState(TODAY_ISO);
+  const puedeBorrar = ctx.esAdmin !== false;
   const inp = { border: `1px solid ${line}`, background: "#FBFAF7" };
   const list = ctx.D.fbLog.filter((e) => e.cuentaId === cuenta.id && passes(f, e.fecha, e.vid)).sort(byFechaDesc);
 
   const guardar = () => {
     if (!cat || !ini || tot === "") return;
-    ctx.setDraft("fbLog", (l) => [...l, { id: "m" + Date.now(), cuentaId: cuenta.id, vid: cuenta.vid, fecha: TODAY_ISO, categoria: cat, inicio: ini, final: fin, total: Number(tot), links: Number(tot) }]);
-    setCat(""); setIni(""); setFin(""); setTot("");
+    ctx.setDraft("fbLog", (l) => [...l, { id: "m" + Date.now(), cuentaId: cuenta.id, vid: cuenta.vid, fecha: admin ? fecha : TODAY_ISO, categoria: cat, inicio: ini, final: fin, total: Number(tot), links: Number(tot) }]);
+    setCat(""); setIni(""); setFin(""); setTot(""); setFecha(TODAY_ISO);
   };
   const setCampo = (id, campo, val) => {
-    if (val === "") return;
+    if (val === "" && campo !== "final") return;
     ctx.setDraft("fbLog", (l) => l.map((e) => (e.id === id ? { ...e, [campo]: campo === "total" ? Number(val) : val } : e)));
   };
   const cell = (e, campo) => {
@@ -911,26 +1115,29 @@ function FbTracker({ ctx, cuenta, mode, initFilter }) {
   list.forEach((e, i) => {
     const closed = isClosed(e.fecha);
     rows.push([
-      <span className="flex items-center gap-1">{fmtY(e.fecha)}{closed && <Lock size={11} style={{ color: muted }} />}</span>,
+      admin
+        ? <span className="flex items-center gap-1"><input type="date" className="text-sm px-1 py-0.5" style={inp} value={e.fecha} onChange={(ev) => ev.target.value && setCampo(e.id, "fecha", ev.target.value)} />{closed && <Lock size={11} style={{ color: muted }} />}</span>
+        : <span className="flex items-center gap-1">{fmtY(e.fecha)}{closed && <Lock size={11} style={{ color: muted }} />}</span>,
       admin
         ? <select className="px-1 py-1 text-sm" style={inp} value={e.categoria} onChange={(ev) => setCampo(e.id, "categoria", ev.target.value)}>
             {ctx.D.categorias.map((c) => <option key={c}>{c}</option>)}
           </select>
         : e.categoria,
-      e.inicio, cell(e, "final"), cell(e, "total"),
+      admin ? cell(e, "inicio") : e.inicio, cell(e, "final"), cell(e, "total"),
+      ...(admin ? [puedeBorrar ? <DelBtn onDelete={() => ctx.setDraft("fbLog", (l) => l.filter((x) => x.id !== e.id))} /> : ""] : []),
     ]);
     const next = list[i + 1];
     if (!next || next.fecha !== e.fecha) {
-      rows.push([<span className="text-xs" style={{ color: muted }}>{fmt(e.fecha)}</span>, <b style={{ color: forest }}>Total del día (esta cuenta)</b>, "", "", <b style={{ color: amber }}>{sum(list.filter((x) => x.fecha === e.fecha).map((x) => +x.total || 0))}</b>]);
+      rows.push([<span className="text-xs" style={{ color: muted }}>{fmt(e.fecha)}</span>, <b style={{ color: forest }}>Total del día (esta cuenta)</b>, "", "", <b style={{ color: amber }}>{sum(list.filter((x) => x.fecha === e.fecha).map((x) => +x.total || 0))}</b>, ...(admin ? [""] : [])]);
     }
   });
 
   return (
     <div>
       <FilterBar f={f} setF={setF} showVend={false} />
-      {!admin && (
+      {true && (
         <div className="bg-white p-4 mb-4" style={{ border: `1px solid ${line}` }}>
-          <div className="text-xs mb-2" style={{ color: muted }}>Nuevo registro · Fecha: {fmtY(TODAY_ISO)} (automática)</div>
+          <div className="text-xs mb-2 flex items-center gap-2 flex-wrap" style={{ color: muted }}>{admin ? <>Nuevo registro · Fecha: <input type="date" className="px-2 py-1 text-sm" style={inp} value={fecha} onChange={(e) => setFecha(e.target.value)} /></> : <>Nuevo registro · Fecha: {fmtY(TODAY_ISO)} (automática)</>}</div>
           <div className="flex gap-2 flex-wrap">
             <select className="px-2 py-2 text-sm flex-1" style={{ ...inp, minWidth: 130 }} value={cat} onChange={(e) => setCat(e.target.value)}>
               <option value="">Categoría…</option>
@@ -944,8 +1151,8 @@ function FbTracker({ ctx, cuenta, mode, initFilter }) {
           <p className="text-xs mt-2" style={{ color: muted }}>Total = cuántas publicaste realmente (los agotados se saltan). Presiona Actualizar para guardar.</p>
         </div>
       )}
-      {admin && <p className="text-xs mb-3" style={{ color: muted }}>Como administradora puedes corregir cualquier día; los cambios en días cerrados (candado) quedan en Auditoría.</p>}
-      <LedgerTable columns={["Fecha", "Categoría", "Inicio", "Final", "Total"]} rows={rows} maxH={360} />
+      {admin && <p className="text-xs mb-3" style={{ color: muted }}>Como administradora puedes cambiar CUALQUIER dato (fecha, categoría, inicio, final, total), agregar registros de cualquier día o eliminarlos; los cambios en días cerrados (candado) quedan en Auditoría.</p>}
+      <LedgerTable columns={admin ? ["Fecha", "Categoría", "Inicio", "Final", "Total", ""] : ["Fecha", "Categoría", "Inicio", "Final", "Total"]} rows={rows} maxH={360} />
     </div>
   );
 }
@@ -973,10 +1180,22 @@ function AdminPendientes({ ctx }) {
     <div>
       <SectionHeader eyebrow="Saldos pendientes de copy y de App" title="Pendientes"
         action={<>
-          <VisToggle k="pendientes" ctx={ctx} />
+          {ctx.esAdmin !== false && (
+            <button onClick={() => ctx.setDraft("vis", (x) => ({ ...x, pendientes: x.pendientes === "todas" ? "admin" : "todas" }))}
+              className="text-sm px-3 py-2 flex items-center gap-1.5"
+              style={ctx.D.vis.pendientes === "todas" ? { background: "#fff", color: rust, border: `1px solid ${rust}` } : { background: "#fff", color: forest, border: `1px solid ${forest}` }}>
+              {ctx.D.vis.pendientes === "todas" ? <><EyeOff size={14} /> Ocultar a vendedoras</> : <><Eye size={14} /> Autorizar visibilidad</>}
+            </button>
+          )}
           <SaveBtn ctx={ctx} keys={["vis"]} />
           <PrimaryBtn onClick={() => descargarCSV(`pendientes_${periodo}.csv`, headers, data)}><Download size={14} /> Exportar a Excel</PrimaryBtn>
         </>} />
+      <div className="bg-white px-3 py-2 mb-4 text-sm" style={{ border: `1px solid ${line}`, borderLeft: `3px solid ${ctx.D.vis.pendientes === "todas" ? "#2F5D3A" : amber}` }}>
+        {ctx.D.vis.pendientes === "todas"
+          ? <>Las vendedoras <b>sí pueden ver</b> sus pendientes en su pantalla de inicio.</>
+          : <>Las vendedoras <b>no ven</b> sus pendientes (solo la administradora).</>}
+        <span className="text-xs ml-2" style={{ color: muted }}>Se aplica al presionar Actualizar.</span>
+      </div>
       <FilterBar f={f} setF={setF} />
       <LedgerTable
         columns={headers}
@@ -1046,7 +1265,7 @@ function AdminMetas({ ctx }) {
           <>
             <div className="flex items-center gap-2">
               <button onClick={() => setSemana(semana - 1)} className="p-1.5" style={{ border: `1px solid ${line}`, background: "#fff" }}><ChevronLeft size={14} /></button>
-              <span className="text-sm px-1" style={{ color: forest }}>Semana {fmt(s0)} – {fmt(addDays(s0, 6))}</span>
+              <span className="text-sm px-1" style={{ color: forest }}>Semana {fmt(s0)} – {fmt(addDays(s0, 5))}</span>
               <button onClick={() => setSemana(semana + 1)} className="p-1.5" style={{ border: `1px solid ${line}`, background: "#fff" }}><ChevronRight size={14} /></button>
             </div>
             <SaveBtn ctx={ctx} keys={keys} />
@@ -1120,7 +1339,8 @@ function AdminMetas({ ctx }) {
 
 function AdminPuntos({ ctx }) {
   const [f, setF] = useState(newFilter("mes"));
-  const [nv, setNv] = useState({ vid: 0, motivo: "", gravedad: "Leve", descuento: "" });
+  const [nv, setNv] = useState({ vid: 0, motivo: "", observacion: "", gravedad: "Leve", descuento: "" });
+  const puedeBorrar = ctx.esAdmin !== false;
   const inp = { border: `1px solid ${line}`, background: "#FBFAF7" };
   const activas = ctx.usuarios.filter((u) => u.rol === "Vendedora" && u.estado === "Activa");
   const nom = (id) => ctx.D.usuarios.find((u) => u.id === id)?.nombre || nombreDe(id);
@@ -1130,8 +1350,8 @@ function AdminPuntos({ ctx }) {
 
   const agregar = () => {
     if (!nv.vid || !nv.motivo.trim()) return;
-    ctx.setDraft("puntos", (l) => [...l, { id: "pm" + Date.now(), vid: nv.vid, fecha: TODAY_ISO, motivo: nv.motivo.trim(), gravedad: nv.gravedad, descuento: nv.descuento === "" ? 0 : nv.descuento }]);
-    setNv({ vid: 0, motivo: "", gravedad: "Leve", descuento: "" });
+    ctx.setDraft("puntos", (l) => [...l, { id: "pm" + Date.now(), vid: nv.vid, fecha: TODAY_ISO, motivo: nv.motivo.trim(), observacion: nv.observacion.trim(), gravedad: nv.gravedad, descuento: nv.descuento === "" ? 0 : nv.descuento }]);
+    setNv({ vid: 0, motivo: "", observacion: "", gravedad: "Leve", descuento: "" });
   };
 
   return (
@@ -1149,6 +1369,8 @@ function AdminPuntos({ ctx }) {
             </select></div>
           <div className="flex-1" style={{ minWidth: 200 }}><label className="block text-xs mb-1" style={{ color: muted }}>Motivo</label>
             <input className="w-full px-2 py-2 text-sm" style={inp} placeholder="Ej. mala atención, error en descripción…" value={nv.motivo} onChange={(e) => setNv({ ...nv, motivo: e.target.value })} /></div>
+          <div className="flex-1" style={{ minWidth: 200 }}><label className="block text-xs mb-1" style={{ color: muted }}>Observación (opcional)</label>
+            <input className="w-full px-2 py-2 text-sm" style={inp} placeholder="Detalle, qué pasó, qué se acordó…" value={nv.observacion} onChange={(e) => setNv({ ...nv, observacion: e.target.value })} /></div>
           <div><label className="block text-xs mb-1" style={{ color: muted }}>Gravedad</label>
             <select className="px-2 py-2 text-sm" style={inp} value={nv.gravedad} onChange={(e) => setNv({ ...nv, gravedad: e.target.value })}>
               <option>Leve</option><option>Media</option><option>Fuerte</option>
@@ -1160,16 +1382,19 @@ function AdminPuntos({ ctx }) {
       </div>
 
       <FilterBar f={f} setF={setF} />
-      <p className="text-xs mb-3" style={{ color: muted }}>Toca cualquier campo para editarlo (motivo, gravedad o descuento) y presiona Actualizar.</p>
+      <p className="text-xs mb-3" style={{ color: muted }}>Toca cualquier campo para editarlo (fecha, vendedora, motivo, observación, gravedad o descuento), o elimina el registro. Presiona Actualizar para guardar.</p>
       <LedgerTable
-        columns={["Fecha", "Vendedora", "Motivo", "Gravedad", "Descuento (columna controlada)"]}
+        columns={["Fecha", "Vendedora", "Motivo", "Observación", "Gravedad", "Descuento (columna controlada)", ""]}
         rows={rows.map((p) => [
-          fmtY(p.fecha), nom(p.vid),
-          <input className="px-2 py-1 text-sm w-full" style={{ ...inp, minWidth: 180 }} value={p.motivo} onChange={(e) => upd(p.id, "motivo", e.target.value)} />,
+          <input type="date" className="text-sm px-1 py-0.5" style={inp} value={p.fecha} onChange={(e) => upd(p.id, "fecha", e.target.value)} />,
+          <select className="text-sm px-1 py-0.5" style={inp} value={p.vid} onChange={(e) => upd(p.id, "vid", Number(e.target.value))}>{vendedoras.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}</select>,
+          <input className="px-2 py-1 text-sm w-full" style={{ ...inp, minWidth: 160 }} value={p.motivo} onChange={(e) => upd(p.id, "motivo", e.target.value)} />,
+          <input className="px-2 py-1 text-sm w-full" style={{ ...inp, minWidth: 180 }} placeholder="Agregar observación…" value={p.observacion || ""} onChange={(e) => upd(p.id, "observacion", e.target.value)} />,
           <select className="px-2 py-1 text-sm" style={{ ...inp, color: gravTone(p.gravedad), fontWeight: 600 }} value={p.gravedad} onChange={(e) => upd(p.id, "gravedad", e.target.value)}>
             <option>Leve</option><option>Media</option><option>Fuerte</option>
           </select>,
           <span className="flex items-center gap-1">-$<NumIn w={56} value={p.descuento} onChange={(x) => upd(p.id, "descuento", x)} /></span>,
+          puedeBorrar ? <DelBtn onDelete={() => ctx.setDraft("puntos", (l) => l.filter((x) => x.id !== p.id))} /> : "",
         ])}
       />
     </div>
@@ -1306,6 +1531,7 @@ function VendedoraPanel({ ctx, me }) {
   const { metas, metricas, vis, puntos, metasCuenta, asist } = vctx;
   const mis = cuentasDe(ctx.cuentas, me.id);
   const [cid, setCid] = useState(null);
+  const [semV, setSemV] = useState(0); // semana que se está viendo en Metas
   const cuenta = mis.find((c) => c.id === cid) || mis[0];
   const c = cycleFor(me.ingresoISO, TODAY_ISO);
   const b = computeBonos(vctx).find((x) => x.v.id === me.id);
@@ -1326,6 +1552,7 @@ function VendedoraPanel({ ctx, me }) {
       <div className="mb-6">
         <div className="text-xs" style={{ color: muted }}>Hoy · sábado 26 de septiembre · Ingreso: {fmtY(me.ingresoISO)}</div>
         <h1 style={{ fontFamily: slab, fontSize: 24, color: forest, fontWeight: 600 }}>Hola, {me.nombre.split(" ")[0]}</h1>
+        <div className="mt-2"><InstallBtn /></div>
       </div>
 
       <div className="p-3 mb-4 text-xs flex items-center gap-2" style={{ background: "#FBEFD9", border: "1px solid #EFCB86", color: "#8A5A00" }}>
@@ -1344,7 +1571,10 @@ function VendedoraPanel({ ctx, me }) {
       </div>
 
       <div className="p-5 mb-4" style={card}>
-        <H>Mis objetivos de la semana (hecho / meta)</H>
+        <H>Mis objetivos de la semana · Copy y App</H>
+        <div className="text-xs mb-3 -mt-2 flex items-center gap-1.5" style={{ color: amber, fontWeight: 600 }}>
+          <CalendarDays size={13} /> {fmtLargo(WEEK_START)} – {fmtLargo(addDays(WEEK_START, 5))}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
             <thead>
@@ -1356,14 +1586,21 @@ function VendedoraPanel({ ctx, me }) {
             </thead>
             <tbody>
               {metricas.map((m) => {
-                const meta = metas[m.key]?.[me.id] || zeros();
+                const meta = (metas[m.key]?.[me.id] || zeros()).slice(0, NDIAS);
                 const hecho = DAYS.map((_, i) => { const d = addDays(WEEK_START, i); return hechoFor(vctx, m.key, me.id, d, d); });
                 return (
-                  <tr key={m.key} style={{ borderBottom: `1px solid ${line}` }}>
-                    <td className="py-2 pr-2" style={{ color: ink, fontWeight: 600 }}>{m.label}</td>
-                    {meta.map((x, i) => <td key={i} className="py-2 px-1 text-center" style={{ color: x ? ink : "#C9C5B4" }}>{x ? `${hecho[i]}/${x}` : "·"}</td>)}
-                    <td className="py-2 pl-2 text-right" style={{ fontFamily: slab, fontWeight: 700, color: forest }}>{sum(hecho)}/{sum(meta.map(Number))}</td>
-                  </tr>
+                  <React.Fragment key={m.key}>
+                    <tr style={{ borderTop: `1px solid ${line}` }}>
+                      <td className="py-1.5 pr-2" style={{ color: muted }}>{m.label} · meta</td>
+                      {meta.map((x, i) => <td key={i} className="px-1 text-center" style={{ color: x ? ink : "#C9C5B4" }}>{x || "·"}</td>)}
+                      <td className="pl-2 text-right" style={{ fontFamily: slab, fontWeight: 700, color: forest }}>{sum(meta.map(Number))}</td>
+                    </tr>
+                    <tr style={{ borderBottom: `1px solid ${line}` }}>
+                      <td className="py-1.5 pr-2" style={{ color: forest, fontWeight: 600 }}>{m.label} · hecho</td>
+                      {hecho.map((x, i) => <td key={i} className="px-1 text-center" style={{ color: meta[i] && x >= meta[i] ? "#2F5D3A" : ink, fontWeight: x ? 600 : 400 }}>{x || "·"}</td>)}
+                      <td className="pl-2 text-right" style={{ fontFamily: slab, fontWeight: 700, color: amber }}>{sum(hecho)}</td>
+                    </tr>
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -1381,6 +1618,11 @@ function VendedoraPanel({ ctx, me }) {
 
       <div className="p-5 mb-4" style={card}>
         <H>Objetivo por cuenta de Facebook</H>
+        <div className="flex items-center gap-1 mb-3">
+          <button onClick={() => setSemV(semV - 1)} className="p-1.5" style={{ border: `1px solid ${line}`, background: "#fff" }}><ChevronLeft size={14} /></button>
+          <span className="text-sm px-1" style={{ color: forest }}>Semana {fmt(addDays(WEEK_START, semV * 7))} – {fmt(addDays(WEEK_START, semV * 7 + 5))}{semV === 0 && <span className="text-xs ml-1" style={{ color: muted }}>(esta semana)</span>}</span>
+          <button onClick={() => setSemV(semV + 1)} className="p-1.5" style={{ border: `1px solid ${line}`, background: "#fff" }}><ChevronRight size={14} /></button>
+        </div>
         {mis.length === 0 ? <p className="text-xs" style={{ color: muted }}>No tienes cuentas asignadas.</p> : (
           <DayGrid totalLabel="TOTAL COPY"
             rows={[...mis.map((x) => ({ label: x.nombre, arr: metasCuenta[x.id] || zeros() })), { label: "APP", arr: metas.app?.[me.id] || zeros(), inTotal: false }]} />
@@ -1480,10 +1722,10 @@ export default function App() {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Zilla+Slab:wght@500;600;700&display=swap');`}</style>
       <div className="flex items-center gap-2 px-4 py-2 text-xs flex-wrap" style={{ background: "#fff", borderBottom: `1px solid ${line}` }}>
         <span style={{ color: muted }}>Vista previa:</span>
-        {["login", "admin", "vendedora"].map((v) => (
+        {["login", "admin", "supervisora", "vendedora"].map((v) => (
           <button key={v} onClick={() => setView(v)} className="px-2.5 py-1"
             style={{ background: view === v ? forest : "transparent", color: view === v ? "#fff" : forest, border: `1px solid ${forest}` }}>
-            {v === "login" ? "Login" : v === "admin" ? "Administradora" : "Vendedora"}
+            {v === "login" ? "Login" : v === "admin" ? "Administradora" : v === "supervisora" ? "Supervisora" : "Vendedora"}
           </button>
         ))}
         {view === "vendedora" && (
@@ -1496,7 +1738,8 @@ export default function App() {
         )}
       </div>
       {view === "login" && <LoginScreen onLogin={(role) => setView(role)} />}
-      {view === "admin" && <AdminPanel ctx={ctx} />}
+      {view === "admin" && <AdminPanel ctx={ctx} esAdmin />}
+      {view === "supervisora" && <AdminPanel key="sup" ctx={{ ...ctx, esAdmin: false }} esAdmin={false} />}
       {view === "vendedora" && <VendedoraPanel ctx={ctx} me={me} />}
     </div>
   );

@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase.js";
 import { fetchMetasGlobales, fetchFbLog, fetchRegistroApp, fetchVisibilidad, weekArrayFromRows, todayISO, currentWeekStart } from "../../lib/api.js";
 import { metaRango, hechoCopy, hechoApp } from "../../lib/bono.js";
 import { obtenerUbicacion, distanciaMetros } from "../../lib/geo.js";
-import { addDays, monthRange, fmtY, DAYS, NDIAS, sum } from "../../lib/dates.js";
+import { addDays, monthRange, fmtY, fmtLargo, DAYS, NDIAS, sum } from "../../lib/dates.js";
 
 export default function Inicio() {
   const { profile } = useAuth();
@@ -90,6 +90,7 @@ export default function Inicio() {
 
       <Card style={{ marginBottom: 16 }}>
         <CardTitle>Mis objetivos de la semana</CardTitle>
+        <div className="text-xs mb-3 -mt-1" style={{ color: COLORS.amber, fontWeight: 600 }}>📅 {fmtLargo(weekStart)} – {fmtLargo(addDays(weekStart, 5))}</div>
         <ResumenSemana
           filas={[
             { grupo: "Copy", meta: arrCopy, hecho: diasSemana.map((f) => hechoDia(f)) },

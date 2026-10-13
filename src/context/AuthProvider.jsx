@@ -14,6 +14,12 @@ export function AuthProvider({ children }) {
       return;
     }
     const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
+    if (!error && data?.estado === "Baja") {
+      // dada de baja: no puede usar la app (sus datos se conservan)
+      await supabase.auth.signOut();
+      setProfile(null); setSession(null);
+      return;
+    }
     if (!error) setProfile(data);
   }, []);
 
