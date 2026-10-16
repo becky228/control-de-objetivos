@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { SectionHeader, Card, Locked, COLORS, slab } from "../../components/ui.jsx";
 import { useAuth } from "../../context/AuthProvider.jsx";
-import { fetchMetasGlobales, fetchFbLog, fetchRegistroApp, fetchAsistencia, fetchPuntos, fetchVentas, fetchBonoConfig, fetchVisibilidad, todayISO } from "../../lib/api.js";
+import { fetchMetasGlobales, fetchFbLog, fetchRegistroApp, fetchAsistencia, fetchPuntos, fetchVentas, fetchBonoConfig, fetchVisibilidad, fetchHorario, todayISO } from "../../lib/api.js";
 import { computeBonoVendedora } from "../../lib/bono.js";
 import { cicloLabel } from "../../lib/dates.js";
 
@@ -14,11 +14,11 @@ export default function Bono() {
 
   useEffect(() => {
     (async () => {
-      const [metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig, v] = await Promise.all([
+      const [metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig, v, horario] = await Promise.all([
         fetchMetasGlobales([profile.id]), fetchFbLog({ vid: profile.id }), fetchRegistroApp({ vid: profile.id }),
-        fetchAsistencia({ vid: profile.id }), fetchPuntos({ vid: profile.id }), fetchVentas(), fetchBonoConfig(), fetchVisibilidad(),
+        fetchAsistencia({ vid: profile.id }), fetchPuntos({ vid: profile.id }), fetchVentas(), fetchBonoConfig(), fetchVisibilidad(), fetchHorario().catch(() => null),
       ]);
-      setB(computeBonoVendedora(profile, { metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig, todayISO: today }));
+      setB(computeBonoVendedora(profile, { metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig, todayISO: today, horario }));
       setVis(v);
       setLoading(false);
     })();

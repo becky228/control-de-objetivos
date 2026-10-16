@@ -20,7 +20,10 @@ export function AuthProvider({ children }) {
       setProfile(null); setSession(null);
       return;
     }
-    if (!error) setProfile(data);
+    if (!error) {
+      setProfile(data);
+      supabase.rpc("cerrar_salidas_olvidadas").then(() => {}, () => {}); // cierra las salidas olvidadas (no es crítico)
+    }
   }, []);
 
   useEffect(() => {

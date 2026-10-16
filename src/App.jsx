@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthProvider.jsx";
+import { PendingProvider } from "./context/PendingProvider.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import AdminLayout from "./components/AdminLayout.jsx";
 import VendedoraLayout from "./components/VendedoraLayout.jsx";
@@ -20,6 +21,7 @@ import AdminConfiguracion from "./pages/admin/Configuracion.jsx";
 
 import VendedoraInicio from "./pages/vendedora/Inicio.jsx";
 import VendedoraFacebook from "./pages/vendedora/Facebook.jsx";
+import VendedoraRegistroApp from "./pages/vendedora/RegistroApp.jsx";
 import VendedoraMetas from "./pages/vendedora/Metas.jsx";
 import VendedoraPuntos from "./pages/vendedora/PuntosMejora.jsx";
 import VendedoraBono from "./pages/vendedora/Bono.jsx";
@@ -28,6 +30,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <PendingProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
 
@@ -48,6 +51,7 @@ export default function App() {
           <Route path="/vendedora" element={<ProtectedRoute rol="vendedora"><VendedoraLayout /></ProtectedRoute>}>
             <Route index element={<VendedoraInicio />} />
             <Route path="facebook" element={<VendedoraFacebook />} />
+            <Route path="registro-app" element={<VendedoraRegistroApp />} />
             <Route path="metas" element={<VendedoraMetas />} />
             <Route path="puntos" element={<VendedoraPuntos />} />
             <Route path="bono" element={<VendedoraBono />} />
@@ -56,6 +60,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        </PendingProvider>
       </AuthProvider>
     </BrowserRouter>
   );

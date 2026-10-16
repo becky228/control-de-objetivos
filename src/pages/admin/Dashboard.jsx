@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { SectionHeader, LedgerTable, Prog, Tag, COLORS } from "../../components/ui.jsx";
-import { fetchVendedoras, fetchMetasGlobales, fetchAsistencia, fetchFbLog, fetchRegistroApp, fetchPuntos, fetchVentas, fetchBonoConfig } from "../../lib/api.js";
+import { fetchVendedoras, fetchMetasGlobales, fetchAsistencia, fetchFbLog, fetchRegistroApp, fetchPuntos, fetchVentas, fetchBonoConfig, fetchHorario } from "../../lib/api.js";
 import { computeBonoVendedora, metaRango, hechoCopy, hechoApp } from "../../lib/bono.js";
 import { addDays, weekStartOf, monthRange, sum, pct, isoToday } from "../../lib/dates.js";
 import { useAuth } from "../../context/AuthProvider.jsx";
@@ -15,11 +15,11 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const [vendedoras, asist, fbLog, appLog, puntos, ventas, bonoConfig] = await Promise.all([
-          fetchVendedoras(), fetchAsistencia(), fetchFbLog(), fetchRegistroApp(), fetchPuntos(), fetchVentas(), fetchBonoConfig(),
+        const [vendedoras, asist, fbLog, appLog, puntos, ventas, bonoConfig, horario] = await Promise.all([
+          fetchVendedoras(), fetchAsistencia(), fetchFbLog(), fetchRegistroApp(), fetchPuntos(), fetchVentas(), fetchBonoConfig(), fetchHorario().catch(() => null),
         ]);
         const metasGlobales = await fetchMetasGlobales(vendedoras.map((v) => v.id));
-        setData({ vendedoras, asist, fbLog, appLog, puntos, ventas, bonoConfig, metasGlobales });
+        setData({ vendedoras, asist, fbLog, appLog, puntos, ventas, bonoConfig, metasGlobales, horario });
       } catch (e) {
         setErr(e.message);
       } finally {
@@ -31,9 +31,9 @@ export default function Dashboard() {
   if (loading) return <p className="text-sm" style={{ color: COLORS.muted }}>Cargando…</p>;
   if (err) return <p className="text-sm" style={{ color: COLORS.rust }}>{err}</p>;
 
-  const { vendedoras, asist, fbLog, appLog, metasGlobales, puntos, ventas, bonoConfig } = data;
+  const { vendedoras, asist, fbLog, appLog, metasGlobales, puntos, ventas, bonoConfig, horario } = data;
   const weekStart = weekStartOf(today);
-  const weekEnd = addDays(weekStart, 5); // lunes a sábado
+  const weekEnd = addDays(weekStart, 6); // lunes a sábado (+ domingo: si trabajaron, cuenta lo ejecutado; no tiene meta)
   const [ms] = monthRange(today.slice(0, 7));
   const presentes = asist.filter((a) => a.fecha === today).length;
 
@@ -53,7 +53,7 @@ export default function Dashboard() {
     (v) => metaRango(metasGlobales, v.id, "app", weekStart, weekEnd),
     (v) => hechoApp(appLog, v.id, weekStart, weekEnd)
   );
-  const bonos = vendedoras.map((v) => computeBonoVendedora(v, { metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig, todayISO: today }));
+  const bonos = vendedoras.map((v) => computeBonoVendedora(v, { metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig, todayISO: today, horario }));
 
   return (
     <div>

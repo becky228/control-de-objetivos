@@ -13,6 +13,22 @@ import {
  * son de ejemplo (generados) y la "fecha de hoy" de la demo es el
  * sábado 26 de septiembre de 2026.
  *
+ * NOVEDADES (ronda 7): vendedora con botón EDITAR en "Mis cuentas de Facebook" (el día se cierra a las
+ * 11:59 pm) y sección nueva "Registro en la APP" donde registra lo ejecutado.
+ *
+ * NOVEDADES (ronda 6): tarifa por hora en Bs · la vendedora ve el tiempo de cada marca solo del día de hoy.
+ *
+ * NOVEDADES (ronda 5): si olvida marcar la salida se cierra sola 10 min después de la salida del
+ * turno (19:10) y NO se cuentan horas extras (el tope es la salida del turno, 19:00). Configurable.
+ *
+ * NOVEDADES (ronda 4): sin motivo "Almuerzo" · horas trabajadas y de permiso solo las ve la
+ * administradora (con resumen por vendedora) · asignación de turnos por vendedora en Configuración ·
+ * turno LIBRE para quien cobra por hora trabajada.
+ *
+ * NOVEDADES (ronda 3): asistencia con VARIAS entradas y salidas al día (permisos) ·
+ * horario y turnos configurables (tiempo completo 9–19, medio tiempo…) · domingo opcional
+ * visible en el resumen de ejecución · barra "Actualizar todo" para guardar cualquier campo.
+ *
  * NOVEDADES (ronda 2): Usuarios con todos los datos editables + cambio de contraseña ·
  * baja sin perder información · la administradora edita/elimina/agrega CUALQUIER registro
  * (asistencia, registro APP, Facebook, puntos de mejora) · puntos de mejora con observación ·
@@ -44,13 +60,54 @@ const slab = "'Zilla Slab', serif";
 const TODAY_ISO = "2026-09-26";
 const WEEK_START = "2026-09-21";
 const LOG_START = "2026-08-01";
-const LATE_AFTER = "08:05";
 // Se trabaja de lunes a sábado (los arreglos siguen teniendo 7 posiciones; el domingo se ignora)
 const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 const NDIAS = DAYS.length;
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 const pad = (n) => String(n).padStart(2, "0");
+const hm = (t) => { const [h, m] = (t || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+const mm = (n) => `${pad(Math.floor(n / 60))}:${pad(n % 60)}`;
+const dur = (min) => `${Math.floor(min / 60)} h ${pad(min % 60)} min`;
+const MOTIVOS = ["Permiso personal", "Trámite", "Salud", "Fin de jornada", "Otro"]; // el almuerzo es dentro de la tienda: no es salida
+const horarioInit = {
+  tolerancia: 5, cierreMin: 10, porDefecto: "t1",
+  turnos: [
+    { id: "t1", nombre: "Tiempo completo", tipo: "fijo", inicio: "09:00", fin: "19:00" },
+    { id: "t2", nombre: "Medio tiempo · mañana", tipo: "fijo", inicio: "09:00", fin: "13:00" },
+    { id: "t3", nombre: "Medio tiempo · tarde", tipo: "fijo", inicio: "14:00", fin: "19:00" },
+    { id: "t4", nombre: "Libre · pago por hora", tipo: "libre", inicio: "", fin: "19:00" },
+  ],
+};
+const turnoDeVid = (ctx, vid) => {
+  const u = (ctx.usuarios || []).find((x) => x.id === vid);
+  return ctx.horario.turnos.find((t) => t.id === (u?.turno || ctx.horario.porDefecto)) || ctx.horario.turnos[0];
+};
+const esLibre = (ctx, vid) => turnoDeVid(ctx, vid).tipo === "libre";
+const limiteTarde = (ctx, vid) => (esLibre(ctx, vid) ? "" : mm(hm(turnoDeVid(ctx, vid).inicio) + (Number(ctx.horario.tolerancia) || 0)));
+const esTarde = (ctx, a) => !esLibre(ctx, a.vid) && !!a.entrada && a.entrada > limiteTarde(ctx, a.vid); // turno libre: no hay retraso
+const finTurno = (ctx, vid) => hm(turnoDeVid(ctx, vid).fin || "19:00");               // tope: no hay horas extras
+const cierreAuto = (ctx, vid) => finTurno(ctx, vid) + (Number(ctx.horario.cierreMin) || 0); // salida olvidada se cierra sola (ej. 19:10)
+// Marcas "efectivas": una salida olvidada se cierra sola si el día ya pasó o ya llegó la hora de cierre
+const marcasEf = (ctx, a, ahora) => (a.marcas || []).map((m) => {
+  if (m.salida) return m;
+  const vencida = a.fecha < TODAY_ISO || (ahora != null && hm(ahora) >= cierreAuto(ctx, a.vid));
+  return vencida ? { ...m, salida: mm(cierreAuto(ctx, a.vid)), auto: true } : m;
+});
+// Horas trabajadas y tiempo de permiso de un día, con tope en la salida del turno (sin horas extras)
+const calc = (ctx, a, ahora) => {
+  const ms = marcasEf(ctx, a, ahora), tope = finTurno(ctx, a.vid);
+  const cl = (t) => Math.min(hm(t), tope);
+  let horas = 0, fuera = 0;
+  ms.forEach((m) => { if (m.salida) horas += Math.max(0, cl(m.salida) - cl(m.entrada)); });
+  ms.slice(1).forEach((m, i) => { const p = ms[i]; if (p.salida && !p.auto) fuera += Math.max(0, cl(m.entrada) - cl(p.salida)); });
+  return { horas, fuera, ms, auto: ms.some((m) => m.auto) };
+};
+const derivar = (a) => {
+  const ms = [...(a.marcas || [])].sort((x, y) => hm(x.entrada) - hm(y.entrada));
+  const ult = ms[ms.length - 1];
+  return { ...a, marcas: ms, entrada: ms[0]?.entrada || "", salida: ult && ult.salida ? ult.salida : "" };
+};
 const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const toDate = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
 const addDays = (s, n) => { const d = toDate(s); d.setDate(d.getDate() + n); return iso(d); };
@@ -152,7 +209,7 @@ const rulesInit = {
   ventas: { a: 100, min: 70, b: 50, c: 0 },
 };
 const pesosInit = { puntualidad: 20, seguimiento: 20, copy: 20, app: 20, ventas: 20 };
-const usuariosInit = vendedoras.map((v) => ({ id: v.id, nombre: v.nombre, correo: v.correo, rol: "Vendedora", ingresoISO: v.ingresoISO, estado: "Activa", bajaISO: null }));
+const usuariosInit = vendedoras.map((v, i) => ({ id: v.id, nombre: v.nombre, correo: v.correo, rol: "Vendedora", ingresoISO: v.ingresoISO, estado: "Activa", bajaISO: null, turno: i === 2 ? "t2" : i === 3 ? "t4" : "t1", tarifa: i === 3 ? 12 : 0 }));
 
 // ---------- Datos de ejemplo generados (asistencia, registro APP, publicaciones FB) ----------
 const hsh = (a, b) => (a * 7919 + b * 104729 + a * b * 31) % 97;
@@ -168,7 +225,25 @@ function genLogs() {
       const h = hsh(v.id, k);
       if (h % 19 === 0) return; // falta
       const late = v.lateMod && h % v.lateMod === 1;
-      asist.push({ id: "a" + n++, vid: v.id, fecha: d, entrada: late ? `08:${pad(10 + (h % 30))}` : `07:${pad(50 + (h % 9))}`, salida: d === TODAY_ISO ? "" : "17:30", gps: h % 23 === 2 ? "Fuera del rango" : "Dentro del rango" });
+      const aid = "a" + n++;
+      const e1 = late ? `09:${pad(10 + (h % 30))}` : `08:${pad(50 + (h % 9))}`;
+      const medio = vendedoras.indexOf(v) === 2; // medio tiempo mañana
+      const libre = vendedoras.indexOf(v) === 3; // turno libre (pago por hora)
+      const marcas = [];
+      if (libre) {
+        // turno libre: viene cuando puede, un solo bloque de horas
+        const ini = 9 * 60 + (h % 6) * 30;
+        marcas.push({ id: aid + "-0", entrada: mm(ini), salida: d === TODAY_ISO ? "" : mm(ini + 180 + (h % 4) * 30), motivo: "Fin de jornada" });
+      } else if (medio) {
+        marcas.push({ id: aid + "-0", entrada: e1, salida: d === TODAY_ISO ? "" : "13:00", motivo: "Fin de jornada" });
+      } else if (h % 5 === 0) {
+        // un permiso corto en el día (el almuerzo es dentro de la tienda, no genera salida)
+        marcas.push({ id: aid + "-0", entrada: e1, salida: "10:30", motivo: "Permiso personal" });
+        marcas.push({ id: aid + "-1", entrada: "11:15", salida: d === TODAY_ISO ? "" : "19:00", motivo: "Fin de jornada" });
+      } else {
+        marcas.push({ id: aid + "-0", entrada: e1, salida: d === TODAY_ISO || h % 7 === 3 ? "" : "19:00", motivo: "Fin de jornada" }); // h%7==3: olvidó marcar la salida
+      }
+      asist.push({ id: aid, vid: v.id, fecha: d, gps: h % 23 === 2 ? "Fuera del rango" : "Dentro del rango", marcas });
       const mApp = metasInit.app[v.id][w];
       if (mApp > 0) appLog.push({ id: "p" + n++, vid: v.id, fecha: d, registrados: mApp - (h % 4 === 0 ? (h % 5) + 1 : 0) });
       cuentasDe(cuentasInit, v.id).forEach((c) => {
@@ -183,7 +258,11 @@ function genLogs() {
       });
     });
   }
-  return { asist, appLog, fb };
+  // Ejemplo de domingo (día no laborable): lo que se registre aparece en el resumen de la vendedora
+  const dom = addDays(WEEK_START, 6), v0 = vendedoras[0], c0 = cuentasDe(cuentasInit, v0.id)[0];
+  appLog.push({ id: "p-dom", vid: v0.id, fecha: dom, registrados: 6 });
+  if (c0) fb.push({ id: "f-dom", cuentaId: c0.id, vid: v0.id, fecha: dom, categoria: CATEGORIAS_INIT[0], inicio: "900", final: "906", total: 6, links: 6 });
+  return { asist: asist.map(derivar), appLog, fb };
 }
 const GEN = genLogs();
 
@@ -192,6 +271,8 @@ const estadoInicial = {
   extra: [], ventas: ventasInit, puntos: puntosInit, cuentas: cuentasInit, categorias: CATEGORIAS_INIT,
   fbLog: GEN.fb, appLog: GEN.appLog, asist: GEN.asist, usuarios: usuariosInit,
   vis: { asistencia: "admin", pendientes: "admin", bono: "admin", descuento: "admin" },
+  horario: horarioInit,
+  tienda: { lat: "", lng: "", radio: 150 },
 };
 
 // ---------- Utilidades de cálculo ----------
@@ -237,7 +318,7 @@ function computeBonos(ctx) {
     const copyP = pc("copy"), appP = pc("app");
     const vt = ventas[v.id] || { meta: 0, logrado: 0 };
     const ventasP = vt.meta ? (vt.logrado / vt.meta) * 100 : 100;
-    const retr = asist.filter((x) => x.vid === v.id && x.fecha >= a && x.fecha <= b && x.entrada > LATE_AFTER).length;
+    const retr = asist.filter((x) => x.vid === v.id && x.fecha >= a && x.fecha <= b && esTarde(ctx, x)).length;
     const punt = retr <= r.p1 ? r.p1pct : retr <= r.p2 ? r.p2pct : r.p3pct;
     const pv = puntos.filter((p) => p.vid === v.id && p.fecha >= c.start && p.fecha <= c.end);
     const medias = pv.filter((p) => p.gravedad === "Media").length;
@@ -513,6 +594,155 @@ function InstallBtn({ dark }) {
   );
 }
 
+// "Registro en la APP" de la vendedora: aquí llena lo que ejecutó cada día
+function RegistroAppVend({ ctx, me }) {
+  const [edit, setEdit] = useState(false);
+  const [nuevo, setNuevo] = useState("");
+  const L = ctx.D.appLog;
+  const reg = L.find((a) => a.vid === me.id && a.fecha === TODAY_ISO);
+  const metaDe = (fecha) => ctx.metas.app?.[me.id]?.[dow(fecha)] || 0;
+  const [ms0] = monthRange(TODAY_ISO.slice(0, 7));
+  const hist = L.filter((a) => a.vid === me.id && a.fecha >= ms0 && a.fecha < TODAY_ISO).sort(byFechaDesc).slice(0, 7);
+  const registrar = () => {
+    if (nuevo === "") return;
+    ctx.setDraft("appLog", (l) => [...l, { id: "p" + Date.now(), vid: me.id, fecha: TODAY_ISO, registrados: Number(nuevo) }]);
+    setNuevo("");
+  };
+  const cambiar = (x) => ctx.setDraft("appLog", (l) => l.map((a) => (a.id === reg.id ? { ...a, registrados: x === "" ? 0 : Number(x) } : a)));
+  return (
+    <div className="p-5 mb-4" style={{ background: "#fff", border: `1px solid ${line}` }}>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <span className="text-sm" style={{ color: forest, fontWeight: 600 }}>Registro en la APP</span>
+        <div className="flex items-center gap-2">
+          <Tag tone="good">Hoy: {reg ? reg.registrados : 0}</Tag>
+          <SaveBtn ctx={ctx} keys={["appLog"]} />
+        </div>
+      </div>
+      <div className="text-xs mb-3" style={{ color: muted }}>Productos que registraste hoy en la app de control de inventario · Meta de hoy: <b>{metaDe(TODAY_ISO)}</b></div>
+
+      {!reg ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <NumIn w={90} value={nuevo} onChange={setNuevo} />
+          <PrimaryBtn onClick={registrar}><Check size={14} /> Registrar</PrimaryBtn>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 flex-wrap">
+          {edit
+            ? <NumIn w={90} value={reg.registrados} onChange={cambiar} />
+            : <span style={{ fontFamily: slab, fontSize: 28, fontWeight: 700, color: forest }}>{reg.registrados}</span>}
+          <div className="flex-1" style={{ minWidth: 140 }}><Prog hecho={+reg.registrados || 0} meta={metaDe(TODAY_ISO)} /></div>
+          {edit
+            ? <button onClick={() => setEdit(false)} className="text-xs flex items-center gap-1" style={{ color: forest, fontWeight: 600 }}><Check size={12} /> Listo</button>
+            : <button onClick={() => setEdit(true)} className="text-xs flex items-center gap-1" style={{ color: forest }}><Pencil size={12} /> Editar</button>}
+        </div>
+      )}
+      <p className="text-xs mt-3" style={{ color: muted }}>Escribe cuántos productos registraste hoy en la app. Puedes editarlo hasta las 11:59 pm; después el día se cierra (🔒) y solo la administradora puede corregirlo. Presiona Actualizar para guardar.</p>
+
+      {hist.length > 0 && (
+        <div className="mt-4">
+          <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+            <thead><tr style={{ borderBottom: `2px solid ${forest}`, color: forest }}>
+              <th className="text-left py-1.5">Día</th><th className="text-right py-1.5">Registrados</th><th className="text-right py-1.5">Meta</th><th className="text-right py-1.5"></th>
+            </tr></thead>
+            <tbody>
+              {hist.map((a) => (
+                <tr key={a.id} style={{ borderBottom: `1px solid ${line}` }}>
+                  <td className="py-1.5">{fmtY(a.fecha)}</td>
+                  <td className="py-1.5 text-right">{a.registrados}</td>
+                  <td className="py-1.5 text-right">{metaDe(a.fecha) || "·"}</td>
+                  <td className="py-1.5 text-right" style={{ color: muted }}><Lock size={11} className="inline" /> cerrado</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Asistencia de hoy de la vendedora: varias entradas y salidas durante el día
+function AsistenciaHoy({ ctx, me }) {
+  const [hora, setHora] = useState("15:30"); // hora simulada: en la app real es la hora del celular
+  const [saliendo, setSaliendo] = useState(false);
+  const [motivo, setMotivo] = useState("Permiso personal");
+  const [aviso, setAviso] = useState("");
+  const reg = ctx.D.asist.find((a) => a.vid === me.id && a.fecha === TODAY_ISO);
+  const ms = reg ? marcasEf(ctx, reg, hora) : []; // incluye el cierre automático si ya pasó la hora
+  const abierta = ms.find((m) => !m.salida);
+  const ult = ms[ms.length - 1];
+  const turno = turnoDeVid(ctx, me.id);
+  const sel = { border: `1px solid ${line}`, background: "#FBFAF7" };
+  const aplicar = (fn) => ctx.apply("asist", (l) => {
+    const ex = l.find((a) => a.vid === me.id && a.fecha === TODAY_ISO);
+    return ex ? l.map((a) => (a.id === ex.id ? derivar(fn(a)) : a)) : [...l, derivar(fn({ id: "a" + Date.now(), vid: me.id, fecha: TODAY_ISO, gps: "Dentro del rango", marcas: [] }))];
+  });
+  const entrar = () => {
+    if (ult?.salida && hm(hora) < hm(ult.salida)) return setAviso(`La hora no puede ser anterior a tu última salida (${ult.salida}).`);
+    setAviso(""); aplicar((a) => ({ ...a, marcas: [...a.marcas, { id: "m" + Date.now(), entrada: hora, salida: "", motivo: "" }] }));
+  };
+  const salir = () => {
+    if (abierta && hm(hora) < hm(abierta.entrada)) return setAviso(`La hora no puede ser anterior a tu entrada (${abierta.entrada}).`);
+    setAviso(""); aplicar((a) => ({ ...a, marcas: a.marcas.map((m) => (m.id === abierta.id ? { ...m, salida: hora, motivo } : m)) }));
+    setSaliendo(false);
+  };
+  const setMotivoMarca = (mid, val) => ctx.setDraft("asist", (l) => l.map((a) => (a.id === reg.id ? { ...a, marcas: a.marcas.map((m) => (m.id === mid ? { ...m, motivo: val } : m)) } : a)));
+  const tarde = reg && esTarde(ctx, reg);
+  return (
+    <div className="p-5 mb-4" style={{ background: "#fff", border: `1px solid ${line}` }}>
+      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+        <span className="text-sm" style={{ color: forest, fontWeight: 600 }}>Asistencia de hoy</span>
+        <div className="flex items-center gap-2">{reg ? gpsTag(reg.gps) : <Tag tone="bad"><XCircle size={12} /> Sin registro</Tag>}<SaveBtn ctx={ctx} keys={["asist"]} /></div>
+      </div>
+      <div className="text-xs mb-3" style={{ color: muted }}>Tu turno: <b>{turno.nombre}</b>{turno.tipo === "libre" ? " · vienes cuando puedes" : ` · ${turno.inicio} – ${turno.fin}`}{tarde && <span className="ml-2"><Tag tone="warn">Entraste después de las {limiteTarde(ctx, me.id)}</Tag></span>}</div>
+
+      <div className="p-3 mb-3 text-sm flex items-center gap-2" style={{ background: abierta ? "#E6F0E6" : ms.length ? "#FBEFD9" : "#F4F1EA", color: abierta ? "#2F5D3A" : ms.length ? "#8A5A00" : muted }}>
+        <Clock size={14} />
+        {abierta ? <>En la tienda desde las <b>{abierta.entrada}</b></> : ult ? <>Fuera de la tienda desde las <b>{ult.salida}</b>{ult.motivo ? ` · ${ult.motivo}` : ""}</> : "Todavía no marcaste tu entrada de hoy"}
+      </div>
+
+      <div className="flex items-center gap-2 mb-3 text-xs" style={{ color: muted }}>
+        Hora actual (simulada en la vista previa): <input type="time" value={hora} onChange={(e) => setHora(e.target.value)} className="px-2 py-1 text-sm" style={sel} />
+      </div>
+
+      <div className="flex gap-2 mb-1">
+        <button onClick={entrar} disabled={!!abierta} className="flex-1 py-2 text-sm disabled:opacity-40" style={{ background: forest, color: "#fff" }}>{ms.length ? "Volver a entrar" : "Marcar entrada"}</button>
+        <button onClick={() => setSaliendo(!saliendo)} disabled={!abierta} className="flex-1 py-2 text-sm disabled:opacity-40" style={{ background: "#fff", color: forest, border: `1px solid ${forest}` }}>Salir / pedir permiso</button>
+      </div>
+      {saliendo && abierta && (
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <select className="px-2 py-2 text-sm" style={sel} value={motivo} onChange={(e) => setMotivo(e.target.value)}>{MOTIVOS.map((x) => <option key={x}>{x}</option>)}</select>
+          <PrimaryBtn onClick={salir}><Check size={14} /> Confirmar salida {hora}</PrimaryBtn>
+        </div>
+      )}
+      {aviso && <p className="text-xs mt-2" style={{ color: rust }}>{aviso}</p>}
+      <p className="text-xs mt-2" style={{ color: muted }}>Cada entrada y salida se guarda al momento de marcarla (con tu ubicación). El motivo se puede cambiar y se guarda con "Actualizar". Si olvidas marcar tu salida, el sistema la cierra solo a las {mm(cierreAuto(ctx, me.id))}. El tiempo de cada marca solo se muestra durante el día de hoy.</p>
+
+      {ms.length > 0 && (
+        <div className="mt-4">
+          <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+            <thead><tr style={{ borderBottom: `2px solid ${forest}`, color: forest }}>
+              <th className="text-left py-1.5">Entrada</th><th className="text-left py-1.5">Salida</th><th className="text-left py-1.5">Motivo</th><th className="text-right py-1.5">Tiempo</th>
+            </tr></thead>
+            <tbody>
+              {ms.map((m) => (
+                <tr key={m.id} style={{ borderBottom: `1px solid ${line}` }}>
+                  <td className="py-1.5">{m.entrada}</td>
+                  <td className="py-1.5">{m.salida ? <span className="whitespace-nowrap">{m.salida}{m.auto && <> <Tag tone="warn">automática</Tag></>}</span> : <Tag tone="good">en la tienda</Tag>}</td>
+                  <td className="py-1.5">{m.auto ? <span style={{ color: muted }}>Cierre automático</span> : m.salida
+                    ? <select className="text-xs px-1 py-0.5" style={sel} value={m.motivo || ""} onChange={(e) => setMotivoMarca(m.id, e.target.value)}><option value="">—</option>{MOTIVOS.map((x) => <option key={x}>{x}</option>)}</select>
+                    : "—"}</td>
+                  <td className="py-1.5 text-right">{m.salida ? dur(Math.max(0, Math.min(hm(m.salida), finTurno(ctx, me.id)) - Math.min(hm(m.entrada), finTurno(ctx, me.id)))) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Login ----------
 function LoginScreen({ onLogin }) {
   return (
@@ -671,7 +901,7 @@ function AdminDashboard({ ctx }) {
           columns={["Vendedora", "Días presentes", "Retrasos", "Fuera de rango"]}
           rows={vs.map((v) => {
             const r = asist.filter((a) => a.vid === v.id && a.fecha >= pa && a.fecha <= pb);
-            return [v.nombre, r.length, r.filter((a) => a.entrada > LATE_AFTER).length, r.filter((a) => a.gps === "Fuera del rango").length];
+            return [v.nombre, r.length, r.filter((a) => esTarde(ctx, a)).length, r.filter((a) => a.gps === "Fuera del rango").length];
           })}
         />
       </div>
@@ -687,14 +917,14 @@ function AdminUsuarios({ ctx }) {
   const [confirm, setConfirm] = useState(null);
   const [subir, setSubir] = useState(null);
   const [edit, setEdit] = useState(null);
-  const [f, setF] = useState({ nombre: "", correo: "", pass: "", ingreso: "", rol: "Vendedora" });
+  const [f, setF] = useState({ nombre: "", correo: "", pass: "", ingreso: "", rol: "Vendedora", turno: ctx.horario.porDefecto });
   const inp = { border: `1px solid ${line}`, background: "#FBFAF7" };
   const lbl = (t) => <label className="block text-xs mb-1" style={{ color: muted }}>{t}</label>;
 
   const guardar = () => {
     if (!f.nombre || !f.correo || !f.ingreso) return;
-    ctx.setDraft("usuarios", (l) => [...l, { id: "u" + Date.now(), nombre: f.nombre, correo: f.correo, rol: f.rol, ingresoISO: f.ingreso, estado: "Activa", bajaISO: null }]);
-    setF({ nombre: "", correo: "", pass: "", ingreso: "", rol: "Vendedora" });
+    ctx.setDraft("usuarios", (l) => [...l, { id: "u" + Date.now(), nombre: f.nombre, correo: f.correo, rol: f.rol, ingresoISO: f.ingreso, estado: "Activa", bajaISO: null, turno: f.turno }]);
+    setF({ nombre: "", correo: "", pass: "", ingreso: "", rol: "Vendedora", turno: ctx.horario.porDefecto });
     setAbierto(false);
   };
   const cambiar = (id, estado) => {
@@ -714,7 +944,7 @@ function AdminUsuarios({ ctx }) {
   };
   const guardarEdicion = () => {
     ctx.setDraft("usuarios", (l) => l.map((x) => (x.id === edit.id
-      ? { ...x, nombre: edit.nombre, correo: edit.correo, ingresoISO: edit.ingresoISO, rol: edit.rol, estado: edit.estado, bajaISO: edit.estado === "Baja" ? (edit.bajaISO || TODAY_ISO) : null }
+      ? { ...x, nombre: edit.nombre, correo: edit.correo, ingresoISO: edit.ingresoISO, rol: edit.rol, turno: edit.turno, tarifa: edit.tarifa || 0, estado: edit.estado, bajaISO: edit.estado === "Baja" ? (edit.bajaISO || TODAY_ISO) : null }
       : x)));
     setMsgPass(edit.pass ? "Contraseña nueva para " + edit.nombre + ": " + edit.pass + "  (anótala y entrégasela; después ya no se puede ver)" : "");
     setEdit(null);
@@ -734,6 +964,10 @@ function AdminUsuarios({ ctx }) {
             <div>{lbl("Rol")}
               <select className="w-full px-3 py-2 text-sm" style={inp} value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value })}>
                 <option>Vendedora</option><option>Supervisora</option><option>Administradora</option>
+              </select></div>
+            <div>{lbl("Turno de trabajo")}
+              <select className="w-full px-3 py-2 text-sm" style={inp} value={f.turno} onChange={(e) => setF({ ...f, turno: e.target.value })}>
+                {ctx.horario.turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}{t.tipo === "libre" ? "" : " · " + t.inicio + "–" + t.fin}</option>)}
               </select></div>
           </div>
           <p className="text-xs mt-3" style={{ color: muted }}>
@@ -759,6 +993,13 @@ function AdminUsuarios({ ctx }) {
               <select className="w-full px-3 py-2 text-sm" style={inp} value={edit.rol} onChange={(e) => setEdit({ ...edit, rol: e.target.value })}>
                 <option>Vendedora</option><option>Supervisora</option><option>Administradora</option>
               </select></div>
+            <div>{lbl("Turno de trabajo")}
+              <select className="w-full px-3 py-2 text-sm" style={inp} value={edit.turno || ctx.horario.porDefecto} onChange={(e) => setEdit({ ...edit, turno: e.target.value })}>
+                {ctx.horario.turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}{t.tipo === "libre" ? "" : " · " + t.inicio + "–" + t.fin}</option>)}
+              </select></div>
+            {(ctx.horario.turnos.find((t) => t.id === (edit.turno || ctx.horario.porDefecto)) || {}).tipo === "libre" && (
+              <div>{lbl("Tarifa por hora (Bs)")}<input type="number" className="w-full px-3 py-2 text-sm" style={inp} value={edit.tarifa || 0} onChange={(e) => setEdit({ ...edit, tarifa: Number(e.target.value) })} /></div>
+            )}
             <div>{lbl("Estado")}
               <select className="w-full px-3 py-2 text-sm" style={inp} value={edit.estado} onChange={(e) => setEdit({ ...edit, estado: e.target.value, bajaISO: e.target.value === "Baja" ? (edit.bajaISO || TODAY_ISO) : null })}>
                 <option>Activa</option><option>Baja</option>
@@ -782,10 +1023,11 @@ function AdminUsuarios({ ctx }) {
       )}
 
       <LedgerTable
-        columns={["Nombre", "Correo", "Rol", "Fecha de ingreso", "Período de pago actual", "Estado", ""]}
+        columns={["Nombre", "Correo", "Rol", "Turno", "Fecha de ingreso", "Período de pago actual", "Estado", ""]}
         rows={lista.map((u) => [
           u.nombre, u.correo,
           <Tag tone={u.rol === "Vendedora" ? "neutral" : "warn"}>{u.rol}</Tag>,
+          (ctx.horario.turnos.find((t) => t.id === (u.turno || ctx.horario.porDefecto)) || {}).nombre || "—",
           fmtY(u.ingresoISO),
           u.estado === "Activa" ? cicloLabel(cycleFor(u.ingresoISO, TODAY_ISO)) : "—",
           u.estado === "Activa" ? <Tag tone="good">Activa</Tag> : <Tag tone="bad">Baja · {fmtY(u.bajaISO)}</Tag>,
@@ -814,31 +1056,119 @@ function AdminUsuarios({ ctx }) {
 }
 
 function AdminConfiguracion({ ctx }) {
-  const [loc, setLoc] = useState({ lat: "", lng: "", radio: 150 });
   const [msg, setMsg] = useState("");
-  const sinUbic = loc.lat === "" || loc.lng === "";
+  const H = ctx.D.horario, T = ctx.D.tienda;
+  const setH = (fn) => ctx.setDraft("horario", (h) => fn(h));
+  const setT = (patch) => ctx.setDraft("tienda", (t) => ({ ...t, ...patch }));
+  const sinUbic = T.lat === "" || T.lng === "";
   const inp = { border: `1px solid ${line}`, background: "#FBFAF7" };
-  const usar = () => { setLoc({ ...loc, lat: -17.393838, lng: -66.156946 }); setMsg('Ubicación obtenida (ejemplo). Presiona "Actualizar" para guardarla.'); };
+  const usar = () => { setT({ lat: -17.393838, lng: -66.156946 }); setMsg('Ubicación obtenida (ejemplo). Presiona "Actualizar" para guardarla.'); };
+  const asignadas = (id) => ctx.D.usuarios.filter((u) => (u.turno || H.porDefecto) === id).length;
+  const updTurno = (id, patch) => setH((h) => ({ ...h, turnos: h.turnos.map((t) => (t.id === id ? { ...t, ...patch } : t)) }));
+  const addTurno = () => setH((h) => ({ ...h, turnos: [...h.turnos, { id: "t" + Date.now(), nombre: "Nuevo turno", inicio: "09:00", fin: "13:00" }] }));
+  const addTurnoLibre = () => setH((h) => ({ ...h, turnos: [...h.turnos, { id: "t" + Date.now(), nombre: "Libre · pago por hora", tipo: "libre", inicio: "", fin: "19:00" }] }));
+  const setUsr = (id, patch) => ctx.setDraft("usuarios", (l) => l.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+  const delTurno = (id) => setH((h) => ({ ...h, turnos: h.turnos.filter((t) => t.id !== id) }));
+  const principal = H.turnos.find((t) => t.id === H.porDefecto) || H.turnos[0];
   return (
     <div>
-      <SectionHeader eyebrow="Ubicación de la tienda para el check-in por GPS" title="Configuración"
-        action={<button onClick={() => setMsg("✓ Guardado (simulado)")} className="text-sm px-3 py-2 flex items-center gap-1.5" style={{ background: "#fff", color: forest, border: `1px solid ${forest}` }}><RefreshCw size={14} /> Actualizar</button>} />
-      <div className="grid grid-cols-3 gap-4 mb-4 max-w-xl">
-        <div><label className="block text-xs mb-1" style={{ color: muted }}>Latitud</label><input className="w-full px-3 py-2 text-sm" style={inp} value={loc.lat} onChange={(e) => setLoc({ ...loc, lat: e.target.value })} /></div>
-        <div><label className="block text-xs mb-1" style={{ color: muted }}>Longitud</label><input className="w-full px-3 py-2 text-sm" style={inp} value={loc.lng} onChange={(e) => setLoc({ ...loc, lng: e.target.value })} /></div>
-        <div><label className="block text-xs mb-1" style={{ color: muted }}>Radio (metros)</label><input className="w-full px-3 py-2 text-sm" style={inp} value={loc.radio} onChange={(e) => setLoc({ ...loc, radio: e.target.value })} /></div>
-      </div>
-      <div className="flex items-center gap-3 flex-wrap mb-3">
-        <PrimaryBtn onClick={usar}><Crosshair size={14} /> Usar mi ubicación actual</PrimaryBtn>
-        {!sinUbic && <span className="text-xs underline" style={{ color: forest }}>Ver en Google Maps</span>}
-        {msg && <span className="text-xs" style={{ color: muted }}>{msg}</span>}
-      </div>
-      {sinUbic && (
-        <div className="p-3 text-xs max-w-xl mb-3" style={{ background: "#FBEFD9", border: "1px solid #EFCB86", color: "#8A5A00" }}>
-          ⚠️ Todavía no hay ubicación de la tienda. Mientras no la guardes, el check-in de todas las vendedoras aparece como "Dentro del rango".
+      <SectionHeader eyebrow="Horario de trabajo y ubicación de la tienda" title="Configuración"
+        action={<SaveBtn ctx={ctx} keys={["horario", "tienda", "usuarios"]} />} />
+
+      <div className="bg-white p-5 mb-6" style={{ border: `1px solid ${line}` }}>
+        <div className="text-sm mb-1" style={{ color: forest, fontWeight: 600 }}>Horario de trabajo</div>
+        <p className="text-xs mb-4" style={{ color: muted }}>Define a qué hora entran y salen. Se usa para saber si llegaron tarde y cuántas horas trabajaron. Puedes crear turnos (por ejemplo medio tiempo) y asignarlos en Usuarios.</p>
+
+        <div className="flex items-center gap-4 flex-wrap mb-4">
+          <div>
+            <label className="block text-xs mb-1" style={{ color: muted }}>Días laborables</label>
+            <div className="flex gap-1">{DAYS.map((d) => <span key={d} className="text-xs px-2 py-1" style={{ background: forest, color: "#fff" }}>{d}</span>)}<span className="text-xs px-2 py-1" style={{ background: "#fff", color: muted, border: `1px dashed ${line}` }}>Dom (opcional)</span></div>
+          </div>
+          <div>
+            <label className="block text-xs mb-1" style={{ color: muted }}>Tolerancia de entrada (min)</label>
+            <NumIn w={60} value={H.tolerancia} onChange={(x) => setH((h) => ({ ...h, tolerancia: x === "" ? 0 : x }))} />
+          </div>
+          <div>
+            <label className="block text-xs mb-1" style={{ color: muted }}>Cierre automático de salida (min después de la salida del turno)</label>
+            <NumIn w={60} value={H.cierreMin} onChange={(x) => setH((h) => ({ ...h, cierreMin: x === "" ? 0 : x }))} />
+          </div>
+          <div>
+            <label className="block text-xs mb-1" style={{ color: muted }}>Turno por defecto</label>
+            <select className="px-2 py-2 text-sm" style={inp} value={H.porDefecto} onChange={(e) => setH((h) => ({ ...h, porDefecto: e.target.value }))}>
+              {H.turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+            </select>
+          </div>
         </div>
-      )}
-      <p className="text-xs" style={{ color: muted }}>Lo más fácil: ve a la tienda, abre esta pantalla desde tu celular y presiona "Usar mi ubicación actual".</p>
+
+        <LedgerTable
+          columns={["Turno", "Tipo", "Entrada", "Salida / tope", "Duración", "Hora límite (con tolerancia)", "Cierre automático", "Asignadas", ""]}
+          rows={H.turnos.map((t) => {
+            const libre = t.tipo === "libre";
+            return [
+              <input className="text-sm px-2 py-1" style={{ ...inp, minWidth: 190 }} value={t.nombre} onChange={(e) => updTurno(t.id, { nombre: e.target.value })} />,
+              <select className="text-sm px-1 py-0.5" style={inp} value={t.tipo || "fijo"} onChange={(e) => updTurno(t.id, { tipo: e.target.value, ...(e.target.value === "fijo" && !t.inicio ? { inicio: "09:00", fin: t.fin || "13:00" } : {}) })}>
+                <option value="fijo">Horario fijo</option><option value="libre">Libre (por horas)</option>
+              </select>,
+              libre ? "—" : <input type="time" className="text-sm px-1 py-0.5" style={{ ...inp, width: 100 }} value={t.inicio} onChange={(e) => updTurno(t.id, { inicio: e.target.value })} />,
+              <input type="time" title={libre ? "Hora tope: no se cuentan horas después" : "Hora de salida del turno"} className="text-sm px-1 py-0.5" style={{ ...inp, width: 100 }} value={t.fin} onChange={(e) => updTurno(t.id, { fin: e.target.value })} />,
+              libre ? <span className="text-xs" style={{ color: muted }}>sin horario fijo · tope {t.fin}</span> : dur(Math.max(0, hm(t.fin) - hm(t.inicio))),
+              libre ? <span className="text-xs" style={{ color: muted }}>sin límite · no hay retraso</span> : mm(hm(t.inicio) + (Number(H.tolerancia) || 0)),
+              mm(hm(t.fin || "19:00") + (Number(H.cierreMin) || 0)),
+              asignadas(t.id) + (t.id === H.porDefecto ? " · por defecto" : ""),
+              t.id === H.porDefecto || asignadas(t.id) > 0
+                ? <span className="text-xs" style={{ color: muted }}>en uso</span>
+                : <button onClick={() => delTurno(t.id)} className="text-xs flex items-center gap-1" style={{ color: rust }}><Trash2 size={12} /> Quitar</button>,
+            ];
+          })}
+        />
+        <div className="mt-3 flex items-center gap-3 flex-wrap">
+          <button onClick={addTurno} className="text-sm px-3 py-2 flex items-center gap-1.5" style={{ border: `1px solid ${forest}`, color: forest, background: "#fff" }}><Plus size={14} /> Agregar turno</button>
+          <button onClick={addTurnoLibre} className="text-sm px-3 py-2 flex items-center gap-1.5" style={{ border: `1px solid ${forest}`, color: forest, background: "#fff" }}><Plus size={14} /> Agregar turno libre</button>
+          <span className="text-xs" style={{ color: muted }}>Se considera retraso si la primera entrada del día es posterior a la entrada del turno + tolerancia (turno principal: {principal ? mm(hm(principal.inicio) + (Number(H.tolerancia) || 0)) : "—"}).</span>
+        </div>
+
+        <div className="mt-6 mb-2 text-sm" style={{ color: forest, fontWeight: 600 }}>Asignar turno a cada vendedora</div>
+        <p className="text-xs mb-3" style={{ color: muted }}>Elige quién trabaja tiempo completo, medio tiempo o en turno libre. En turno libre no hay hora de entrada ni retrasos: se paga por horas trabajadas × la tarifa por hora que pongas aquí.</p>
+        <div className="flex gap-2 flex-wrap mb-3">
+          {H.turnos.map((t) => <Tag key={t.id} tone={t.tipo === "libre" ? "warn" : "neutral"}>{t.nombre}: {asignadas(t.id)}</Tag>)}
+        </div>
+        <LedgerTable
+          columns={["Vendedora", "Turno", "Horario", "Tarifa por hora (Bs)"]}
+          rows={ctx.D.usuarios.filter((u) => u.rol === "Vendedora" && u.estado === "Activa").map((u) => {
+            const t = H.turnos.find((x) => x.id === (u.turno || H.porDefecto)) || H.turnos[0];
+            const libre = t.tipo === "libre";
+            return [
+              u.nombre,
+              <select className="text-sm px-2 py-1" style={{ ...inp, minWidth: 200 }} value={t.id} onChange={(e) => setUsr(u.id, { turno: e.target.value })}>
+                {H.turnos.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+              </select>,
+              libre ? "Viene cuando puede" : `${t.inicio} – ${t.fin} (${dur(Math.max(0, hm(t.fin) - hm(t.inicio)))})`,
+              libre ? <NumIn w={70} value={u.tarifa || 0} onChange={(x) => setUsr(u.id, { tarifa: x === "" ? 0 : x })} /> : <span style={{ color: muted }}>—</span>,
+            ];
+          })}
+        />
+        <p className="text-xs mt-3" style={{ color: muted }}>No hay horas extras: no se cuentan horas después de la salida del turno (o del tope, en turno libre). Si una vendedora olvida marcar su salida, el sistema la cierra sola a la salida del turno + {Number(H.cierreMin) || 0} min (ej. {mm(hm(principal?.fin || "19:00") + (Number(H.cierreMin) || 0))}).</p>
+        <p className="text-xs mt-3" style={{ color: muted }}>El domingo no es día laborable: no tiene meta ni cuenta como falta. Si una vendedora trabaja un domingo, lo que registre aparece en su cuadro resumen de ejecución.</p>
+      </div>
+
+      <div className="bg-white p-5" style={{ border: `1px solid ${line}` }}>
+        <div className="text-sm mb-3" style={{ color: forest, fontWeight: 600 }}>Ubicación de la tienda (check-in por GPS)</div>
+        <div className="grid grid-cols-3 gap-4 mb-4 max-w-xl">
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Latitud</label><input className="w-full px-3 py-2 text-sm" style={inp} value={T.lat} onChange={(e) => setT({ lat: e.target.value })} /></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Longitud</label><input className="w-full px-3 py-2 text-sm" style={inp} value={T.lng} onChange={(e) => setT({ lng: e.target.value })} /></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Radio (metros)</label><input className="w-full px-3 py-2 text-sm" style={inp} value={T.radio} onChange={(e) => setT({ radio: e.target.value })} /></div>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap mb-3">
+          <PrimaryBtn onClick={usar}><Crosshair size={14} /> Usar mi ubicación actual</PrimaryBtn>
+          {!sinUbic && <span className="text-xs underline" style={{ color: forest }}>Ver en Google Maps</span>}
+          {msg && <span className="text-xs" style={{ color: muted }}>{msg}</span>}
+        </div>
+        {sinUbic && (
+          <div className="p-3 text-xs max-w-xl" style={{ background: "#FBEFD9", border: "1px solid #EFCB86", color: "#8A5A00" }}>
+            ⚠️ Todavía no hay ubicación de la tienda. Mientras no la guardes, el check-in de todas las vendedoras aparece como "Dentro del rango".
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -846,21 +1176,33 @@ function AdminConfiguracion({ ctx }) {
 function AdminAsistencia({ ctx }) {
   const [f, setF] = useState(newFilter("mes"));
   const [back, setBack] = useState(0);
-  const [nv, setNv] = useState({ vid: 0, fecha: TODAY_ISO, entrada: "08:00", salida: "" });
+  const [sel, setSel] = useState(null); // día cuyo detalle de marcas está abierto
+  const [nv, setNv] = useState({ vid: 0, fecha: TODAY_ISO, entrada: "09:00", salida: "" });
   const puedeBorrar = ctx.esAdmin !== false;
   const A = ctx.D.asist;
   const rows = A.filter((a) => passes(f, a.fecha, a.vid)).sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : a.vid - b.vid));
   const vs = vendedoras.filter((v) => !f.vid || v.id === f.vid);
-  const edit = (id, campo, val) => ctx.setDraft("asist", (l) => l.map((a) => (a.id === id ? { ...a, [campo]: val } : a)));
-  const del = (id) => ctx.setDraft("asist", (l) => l.filter((a) => a.id !== id));
+  const setDia = (id, fn) => ctx.setDraft("asist", (l) => l.map((a) => (a.id === id ? derivar(fn(a)) : a)));
+  const editDia = (id, campo, val) => setDia(id, (a) => ({ ...a, [campo]: val }));
+  const editMarca = (id, mid, campo, val) => setDia(id, (a) => ({ ...a, marcas: a.marcas.map((m) => (m.id === mid ? { ...m, [campo]: val } : m)) }));
+  const delMarca = (id, mid) => setDia(id, (a) => ({ ...a, marcas: a.marcas.filter((m) => m.id !== mid) }));
+  const addMarca = (id) => setDia(id, (a) => {
+    const ult = [...a.marcas].sort((x, y) => hm(x.entrada) - hm(y.entrada)).pop();
+    return { ...a, marcas: [...a.marcas, { id: "m" + Date.now(), entrada: ult?.salida || "09:00", salida: "", motivo: "Permiso personal" }] };
+  });
+  const del = (id) => { ctx.setDraft("asist", (l) => l.filter((a) => a.id !== id)); if (sel === id) setSel(null); };
   const dup = (a) => A.some((x) => x.id !== a.id && x.vid === a.vid && x.fecha === a.fecha);
   const agregar = () => {
     if (!nv.vid || !nv.fecha || !nv.entrada) return;
-    ctx.setDraft("asist", (l) => [...l, { id: "a" + Date.now(), vid: nv.vid, fecha: nv.fecha, entrada: nv.entrada, salida: nv.salida, gps: "Dentro del rango" }]);
-    setNv({ vid: 0, fecha: TODAY_ISO, entrada: "08:00", salida: "" });
+    const marca = { id: "m" + Date.now(), entrada: nv.entrada, salida: nv.salida, motivo: nv.salida ? "Fin de jornada" : "" };
+    const existe = A.find((a) => a.vid === nv.vid && a.fecha === nv.fecha);
+    if (existe) setDia(existe.id, (a) => ({ ...a, marcas: [...a.marcas, marca] }));
+    else ctx.setDraft("asist", (l) => [...l, derivar({ id: "a" + Date.now(), vid: nv.vid, fecha: nv.fecha, gps: "Dentro del rango", marcas: [marca] })]);
+    setNv({ vid: 0, fecha: TODAY_ISO, entrada: "09:00", salida: "" });
   };
   const tin = { border: `1px solid ${line}`, background: "#FBFAF7", width: 96 };
-  const sel = { border: `1px solid ${line}`, background: "#FBFAF7" };
+  const sel_ = { border: `1px solid ${line}`, background: "#FBFAF7" };
+  const dia = A.find((a) => a.id === sel);
 
   return (
     <div>
@@ -868,15 +1210,16 @@ function AdminAsistencia({ ctx }) {
         action={<><VisToggle k="asistencia" ctx={ctx} /><SaveBtn ctx={ctx} keys={["asist", "vis"]} /></>} />
 
       <div className="bg-white p-4 mb-5" style={{ border: `1px solid ${line}`, borderLeft: `3px solid ${amber}` }}>
-        <div className="text-sm mb-3" style={{ color: forest, fontWeight: 600 }}>Agregar registro manual (por si olvidó marcar)</div>
+        <div className="text-sm mb-1" style={{ color: forest, fontWeight: 600 }}>Agregar registro manual (por si olvidó marcar)</div>
+        <p className="text-xs mb-3" style={{ color: muted }}>Si ya existe un registro de esa vendedora ese día, se agrega como una entrada/salida más.</p>
         <div className="flex gap-2 flex-wrap items-end">
           <div><label className="block text-xs mb-1" style={{ color: muted }}>Vendedora</label>
-            <select className="px-2 py-2 text-sm" style={{ ...sel, minWidth: 150 }} value={nv.vid} onChange={(e) => setNv({ ...nv, vid: Number(e.target.value) })}>
+            <select className="px-2 py-2 text-sm" style={{ ...sel_, minWidth: 150 }} value={nv.vid} onChange={(e) => setNv({ ...nv, vid: Number(e.target.value) })}>
               <option value={0}>Elegir…</option>{vendedoras.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
             </select></div>
-          <div><label className="block text-xs mb-1" style={{ color: muted }}>Fecha</label><input type="date" className="px-2 py-2 text-sm" style={sel} value={nv.fecha} onChange={(e) => setNv({ ...nv, fecha: e.target.value })} /></div>
-          <div><label className="block text-xs mb-1" style={{ color: muted }}>Entrada</label><input type="time" className="px-2 py-2 text-sm" style={sel} value={nv.entrada} onChange={(e) => setNv({ ...nv, entrada: e.target.value })} /></div>
-          <div><label className="block text-xs mb-1" style={{ color: muted }}>Salida</label><input type="time" className="px-2 py-2 text-sm" style={sel} value={nv.salida} onChange={(e) => setNv({ ...nv, salida: e.target.value })} /></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Fecha</label><input type="date" className="px-2 py-2 text-sm" style={sel_} value={nv.fecha} onChange={(e) => setNv({ ...nv, fecha: e.target.value })} /></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Entrada</label><input type="time" className="px-2 py-2 text-sm" style={sel_} value={nv.entrada} onChange={(e) => setNv({ ...nv, entrada: e.target.value })} /></div>
+          <div><label className="block text-xs mb-1" style={{ color: muted }}>Salida</label><input type="time" className="px-2 py-2 text-sm" style={sel_} value={nv.salida} onChange={(e) => setNv({ ...nv, salida: e.target.value })} /></div>
           <PrimaryBtn onClick={agregar}><Plus size={14} /> Agregar</PrimaryBtn>
         </div>
       </div>
@@ -884,17 +1227,48 @@ function AdminAsistencia({ ctx }) {
       <FilterBar f={f} setF={setF} />
 
       <h3 className="text-sm mb-1" style={{ color: forest, fontWeight: 600 }}>Detalle diario</h3>
-      <p className="text-xs mb-3" style={{ color: muted }}>Puedes cambiar cualquier dato: fecha, vendedora, horas, ubicación, o eliminar el registro. Cada cambio queda en Auditoría.</p>
+      <p className="text-xs mb-3" style={{ color: muted }}>Cada fila resume el día: 1ª entrada, última salida y horas trabajadas (tope: la salida del turno; si olvida marcar la salida, se cierra sola). Abre "Marcas" para ver y corregir todas sus entradas y salidas (permisos, almuerzo…). Cada cambio queda en Auditoría.</p>
+
+      {dia && (
+        <div className="bg-white p-4 mb-4" style={{ border: `1px solid ${line}`, borderLeft: `3px solid ${forest}` }}>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="text-sm" style={{ color: forest, fontWeight: 600 }}>Marcas de {nombreDe(dia.vid)} · {fmtLargo(dia.fecha)}
+              <span className="text-xs ml-2" style={{ color: muted, fontWeight: 400 }}>Trabajado: {dur(calc(ctx, dia).horas)} · Permiso: {dur(calc(ctx, dia).fuera)}</span></div>
+            <div className="flex gap-2">
+              <button onClick={() => addMarca(dia.id)} className="text-xs px-2 py-1.5 flex items-center gap-1" style={{ border: `1px solid ${forest}`, color: forest, background: "#fff" }}><Plus size={12} /> Agregar marca</button>
+              <button onClick={() => setSel(null)} className="text-xs px-2 py-1.5" style={{ color: muted }}>Cerrar</button>
+            </div>
+          </div>
+          <LedgerTable
+            columns={["#", "Entrada", "Salida", "Motivo de la salida", "Tiempo", ""]}
+            rows={dia.marcas.map((m, i) => [
+              i + 1,
+              <input type="time" className="text-sm px-1 py-0.5" style={tin} value={m.entrada} onChange={(e) => editMarca(dia.id, m.id, "entrada", e.target.value)} />,
+              <input type="time" className="text-sm px-1 py-0.5" style={tin} value={m.salida} onChange={(e) => editMarca(dia.id, m.id, "salida", e.target.value)} />,
+              <select className="text-sm px-1 py-0.5" style={sel_} value={m.motivo || ""} onChange={(e) => editMarca(dia.id, m.id, "motivo", e.target.value)}>
+                <option value="">—</option>{MOTIVOS.map((x) => <option key={x}>{x}</option>)}
+              </select>,
+              m.salida ? dur(Math.max(0, Math.min(hm(m.salida), finTurno(ctx, dia.vid)) - Math.min(hm(m.entrada), finTurno(ctx, dia.vid)))) : <Tag tone="warn">sin salida · se cierra sola {mm(cierreAuto(ctx, dia.vid))}</Tag>,
+              puedeBorrar ? <DelBtn label="Quitar" onDelete={() => delMarca(dia.id, m.id)} /> : "",
+            ])}
+          />
+        </div>
+      )}
+
       <LedgerTable maxH={300}
-        columns={["Fecha", "Vendedora", "Entrada", "Salida", "Ubicación", "Puntualidad", "Registro", ""]}
+        columns={["Fecha", "Vendedora", "Turno", "1ª entrada", "Últ. salida", "Horas", "Permiso", "Ubicación", "Puntualidad", "Registro", "Marcas", ""]}
         rows={rows.map((a) => [
-          <span className="flex items-center gap-1"><input type="date" className="text-sm px-1 py-0.5" style={sel} value={a.fecha} onChange={(e) => edit(a.id, "fecha", e.target.value)} />{dup(a) && <Tag tone="bad">duplicado</Tag>}</span>,
-          <select className="text-sm px-1 py-0.5" style={sel} value={a.vid} onChange={(e) => edit(a.id, "vid", Number(e.target.value))}>{vendedoras.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}</select>,
-          <input type="time" className="text-sm px-1 py-0.5" style={tin} value={a.entrada} onChange={(e) => edit(a.id, "entrada", e.target.value)} />,
-          <input type="time" className="text-sm px-1 py-0.5" style={tin} value={a.salida} onChange={(e) => edit(a.id, "salida", e.target.value)} />,
-          <select className="text-sm px-1 py-0.5" style={sel} value={a.gps} onChange={(e) => edit(a.id, "gps", e.target.value)}><option>Dentro del rango</option><option>Fuera del rango</option></select>,
-          a.entrada > LATE_AFTER ? <Tag tone="warn">Retraso</Tag> : <Tag tone="good">A tiempo</Tag>,
+          <span className="flex items-center gap-1"><input type="date" className="text-sm px-1 py-0.5" style={sel_} value={a.fecha} onChange={(e) => editDia(a.id, "fecha", e.target.value)} />{dup(a) && <Tag tone="bad">duplicado</Tag>}</span>,
+          <select className="text-sm px-1 py-0.5" style={sel_} value={a.vid} onChange={(e) => editDia(a.id, "vid", Number(e.target.value))}>{vendedoras.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}</select>,
+          <span className="text-xs">{turnoDeVid(ctx, a.vid).nombre}</span>,
+          a.entrada || "—",
+          calc(ctx, a).auto ? <span className="whitespace-nowrap">{mm(cierreAuto(ctx, a.vid))} <Tag tone="warn">automática</Tag></span> : (a.salida || (a.marcas.length ? <Tag tone="good">en la tienda</Tag> : "—")),
+          dur(calc(ctx, a).horas),
+          calc(ctx, a).fuera ? dur(calc(ctx, a).fuera) : "—",
+          <select className="text-sm px-1 py-0.5" style={sel_} value={a.gps} onChange={(e) => editDia(a.id, "gps", e.target.value)}><option>Dentro del rango</option><option>Fuera del rango</option></select>,
+          esLibre(ctx, a.vid) ? <Tag tone="neutral">Libre</Tag> : esTarde(ctx, a) ? <Tag tone="warn">Retraso</Tag> : <Tag tone="good">A tiempo</Tag>,
           cierreTag(a.fecha),
+          <button onClick={() => setSel(sel === a.id ? null : a.id)} className="text-xs underline" style={{ color: forest }}>{sel === a.id ? "Ocultar" : `Ver (${a.marcas.length})`}</button>,
           puedeBorrar ? <DelBtn onDelete={() => del(a.id)} /> : "",
         ])}
       />
@@ -909,19 +1283,27 @@ function AdminAsistencia({ ctx }) {
         </div>
       </div>
       <LedgerTable
-        columns={["Vendedora", "Ingreso", "Período de pago", "Presentes", "Laborables", "Faltas", "Retrasos", "Fuera de rango", "Índice"]}
+        columns={["Vendedora", "Turno", "Ingreso", "Período de pago", "Presentes", "Laborables", "Faltas", "Retrasos", "Fuera de rango", "Horas trabajadas", "Horas de permiso", "Pago por horas", "Índice"]}
         rows={vs.map((v) => {
           const c = cycleBack(v.ingresoISO, TODAY_ISO, back);
-          if (c.end < v.ingresoISO) return [v.nombre, fmtY(v.ingresoISO), "Aún no ingresaba", "—", "—", "—", "—", "—", "—"];
+          const t = turnoDeVid(ctx, v.id), libre = t.tipo === "libre";
+          const us = ctx.usuarios.find((x) => x.id === v.id);
+          if (c.end < v.ingresoISO) return [v.nombre, t.nombre, fmtY(v.ingresoISO), "Aún no ingresaba", "—", "—", "—", "—", "—", "—", "—", "—", "—"];
           const a = maxISO(c.start, v.ingresoISO), b = minISO(c.end, TODAY_ISO);
           const r = A.filter((x) => x.vid === v.id && x.fecha >= a && x.fecha <= b);
           const lab = workdays(a, b);
-          return [v.nombre, fmtY(v.ingresoISO), cicloLabel(c), r.length, lab, Math.max(0, lab - r.length),
-            r.filter((x) => x.entrada > LATE_AFTER).length, r.filter((x) => x.gps === "Fuera del rango").length,
-            <b style={{ color: forest }}>{pct(r.length, lab)}%</b>];
+          const horas = sum(r.map((x) => calc(ctx, x).horas)), perm = sum(r.map((x) => calc(ctx, x).fuera));
+          const veces = sum(r.map((x) => Math.max(0, x.marcas.length - 1)));
+          return [v.nombre, <span className="text-xs">{t.nombre}</span>, fmtY(v.ingresoISO), cicloLabel(c), r.length,
+            libre ? "—" : lab, libre ? "—" : Math.max(0, lab - r.length),
+            libre ? "—" : r.filter((x) => esTarde(ctx, x)).length, r.filter((x) => x.gps === "Fuera del rango").length,
+            <b>{dur(horas)}</b>,
+            perm ? <span>{dur(perm)} <span className="text-xs" style={{ color: muted }}>({veces} {veces === 1 ? "vez" : "veces"})</span></span> : "—",
+            libre ? <b style={{ color: amber }}>Bs {Math.round((horas / 60) * (us?.tarifa || 0))}</b> : "—",
+            libre ? "—" : <b style={{ color: forest }}>{pct(r.length, lab)}%</b>];
         })}
       />
-      <p className="text-xs mt-3" style={{ color: muted }}>Índice = días presentes ÷ días laborables (lunes a sábado) del período, contando hasta hoy.</p>
+      <p className="text-xs mt-3" style={{ color: muted }}>Índice = días presentes ÷ días laborables (lunes a sábado) del período, contando hasta hoy. Horas de permiso = tiempo que salió y volvió durante el día (el almuerzo es dentro de la tienda y no cuenta). En turno libre no hay retrasos, faltas ni índice: se paga por horas trabajadas × tarifa. No hay horas extras: no se cuentan horas después de la salida del turno, y una salida olvidada se cierra sola. Estas horas solo las ve la administradora.</p>
     </div>
   );
 }
@@ -1089,6 +1471,7 @@ function FbTracker({ ctx, cuenta, mode, initFilter }) {
   const [tot, setTot] = useState("");
   const [fecha, setFecha] = useState(TODAY_ISO);
   const puedeBorrar = ctx.esAdmin !== false;
+  const [editId, setEditId] = useState(null); // fila que la vendedora está editando (solo registros de hoy)
   const inp = { border: `1px solid ${line}`, background: "#FBFAF7" };
   const list = ctx.D.fbLog.filter((e) => e.cuentaId === cuenta.id && passes(f, e.fecha, e.vid)).sort(byFechaDesc);
 
@@ -1102,7 +1485,7 @@ function FbTracker({ ctx, cuenta, mode, initFilter }) {
     ctx.setDraft("fbLog", (l) => l.map((e) => (e.id === id ? { ...e, [campo]: campo === "total" ? Number(val) : val } : e)));
   };
   const cell = (e, campo) => {
-    const canEdit = admin || e.fecha === TODAY_ISO;
+    const canEdit = admin || (editId === e.id && !isClosed(e.fecha));
     const v = e[campo];
     if (canEdit) {
       return <input key={e.id + campo + v} defaultValue={v ?? ""} type={campo === "total" ? "number" : "text"} className="px-2 py-1 text-sm"
@@ -1118,17 +1501,23 @@ function FbTracker({ ctx, cuenta, mode, initFilter }) {
       admin
         ? <span className="flex items-center gap-1"><input type="date" className="text-sm px-1 py-0.5" style={inp} value={e.fecha} onChange={(ev) => ev.target.value && setCampo(e.id, "fecha", ev.target.value)} />{closed && <Lock size={11} style={{ color: muted }} />}</span>
         : <span className="flex items-center gap-1">{fmtY(e.fecha)}{closed && <Lock size={11} style={{ color: muted }} />}</span>,
-      admin
+      (admin || editId === e.id)
         ? <select className="px-1 py-1 text-sm" style={inp} value={e.categoria} onChange={(ev) => setCampo(e.id, "categoria", ev.target.value)}>
             {ctx.D.categorias.map((c) => <option key={c}>{c}</option>)}
           </select>
         : e.categoria,
-      admin ? cell(e, "inicio") : e.inicio, cell(e, "final"), cell(e, "total"),
-      ...(admin ? [puedeBorrar ? <DelBtn onDelete={() => ctx.setDraft("fbLog", (l) => l.filter((x) => x.id !== e.id))} /> : ""] : []),
+      (admin || editId === e.id) ? cell(e, "inicio") : e.inicio, cell(e, "final"), cell(e, "total"),
+      admin
+        ? (puedeBorrar ? <DelBtn onDelete={() => ctx.setDraft("fbLog", (l) => l.filter((x) => x.id !== e.id))} /> : "")
+        : closed
+          ? <span className="text-xs flex items-center gap-1 whitespace-nowrap" style={{ color: muted }}><Lock size={11} /> cerrado</span>
+          : editId === e.id
+            ? <button onClick={() => setEditId(null)} className="text-xs flex items-center gap-1" style={{ color: forest, fontWeight: 600 }}><Check size={12} /> Listo</button>
+            : <button onClick={() => setEditId(e.id)} className="text-xs flex items-center gap-1" style={{ color: forest }}><Pencil size={12} /> Editar</button>,
     ]);
     const next = list[i + 1];
     if (!next || next.fecha !== e.fecha) {
-      rows.push([<span className="text-xs" style={{ color: muted }}>{fmt(e.fecha)}</span>, <b style={{ color: forest }}>Total del día (esta cuenta)</b>, "", "", <b style={{ color: amber }}>{sum(list.filter((x) => x.fecha === e.fecha).map((x) => +x.total || 0))}</b>, ...(admin ? [""] : [])]);
+      rows.push([<span className="text-xs" style={{ color: muted }}>{fmt(e.fecha)}</span>, <b style={{ color: forest }}>Total del día (esta cuenta)</b>, "", "", <b style={{ color: amber }}>{sum(list.filter((x) => x.fecha === e.fecha).map((x) => +x.total || 0))}</b>, ""]);
     }
   });
 
@@ -1152,7 +1541,8 @@ function FbTracker({ ctx, cuenta, mode, initFilter }) {
         </div>
       )}
       {admin && <p className="text-xs mb-3" style={{ color: muted }}>Como administradora puedes cambiar CUALQUIER dato (fecha, categoría, inicio, final, total), agregar registros de cualquier día o eliminarlos; los cambios en días cerrados (candado) quedan en Auditoría.</p>}
-      <LedgerTable columns={admin ? ["Fecha", "Categoría", "Inicio", "Final", "Total", ""] : ["Fecha", "Categoría", "Inicio", "Final", "Total"]} rows={rows} maxH={360} />
+      {!admin && <p className="text-xs mb-3" style={{ color: muted }}>Usa "Editar" para corregir tus registros de hoy y presiona Actualizar para guardar. A las 11:59 pm el día se cierra (🔒) y ya no se puede modificar; solo la administradora puede corregirlo.</p>}
+      <LedgerTable columns={["Fecha", "Categoría", "Inicio", "Final", "Total", ""]} rows={rows} maxH={360} />
     </div>
   );
 }
@@ -1527,7 +1917,7 @@ function AdminAuditoria({ ctx }) {
 // ---------- Panel Vendedora (solo ve lo suyo) ----------
 function VendedoraPanel({ ctx, me }) {
   // Sus propios avances (fbLog) son borrador hasta que presione "Actualizar"; lo demás viene de lo ya guardado por la administradora
-  const vctx = { ...ctx, fbLog: ctx.D.fbLog };
+  const vctx = { ...ctx, fbLog: ctx.D.fbLog, appLog: ctx.D.appLog };
   const { metas, metricas, vis, puntos, metasCuenta, asist } = vctx;
   const mis = cuentasDe(ctx.cuentas, me.id);
   const [cid, setCid] = useState(null);
@@ -1546,6 +1936,10 @@ function VendedoraPanel({ ctx, me }) {
   const presentes = asist.filter((a) => a.vid === me.id && a.fecha >= cyA && a.fecha <= cyB);
   const pendCopy = Math.max(0, metaRango(metas, "copy", me, ms, TODAY_ISO) - hechoFor(vctx, "copy", me.id, ms, TODAY_ISO));
   const pendApp = Math.max(0, metaRango(metas, "app", me, ms, TODAY_ISO) - hechoFor(vctx, "app", me.id, ms, TODAY_ISO));
+  // Domingo: no es día laborable (sin meta), pero si trabajó se muestra en su resumen
+  const domISO = addDays(WEEK_START, 6);
+  const conDom = metricas.some((m) => hechoFor(vctx, m.key, me.id, domISO, domISO) > 0);
+  const dias = conDom ? [...DAYS, "Dom"] : DAYS;
 
   return (
     <div className="min-h-full py-8 px-6 max-w-lg mx-auto" style={{ background: paper }}>
@@ -1559,35 +1953,27 @@ function VendedoraPanel({ ctx, me }) {
         <Clock size={14} /> Puedes registrar y editar tus avances de hoy hasta las 00:00. Después solo la administradora puede modificarlos.
       </div>
 
-      <div className="p-5 mb-4" style={card}>
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm" style={{ color: forest, fontWeight: 600 }}>Asistencia de hoy</span>
-          {hoy ? gpsTag(hoy.gps) : <Tag tone="bad"><XCircle size={12} /> Sin registro</Tag>}
-        </div>
-        <div className="flex gap-2">
-          <button className="flex-1 py-2 text-sm" style={{ background: forest, color: "#fff" }}>Check-in{hoy ? ` · ${hoy.entrada}` : ""}</button>
-          <button className="flex-1 py-2 text-sm" style={{ background: "#fff", color: forest, border: `1px solid ${forest}` }}>Check-out</button>
-        </div>
-      </div>
+      <AsistenciaHoy ctx={ctx} me={me} />
 
       <div className="p-5 mb-4" style={card}>
         <H>Mis objetivos de la semana · Copy y App</H>
         <div className="text-xs mb-3 -mt-2 flex items-center gap-1.5" style={{ color: amber, fontWeight: 600 }}>
-          <CalendarDays size={13} /> {fmtLargo(WEEK_START)} – {fmtLargo(addDays(WEEK_START, 5))}
+          <CalendarDays size={13} /> {fmtLargo(WEEK_START)} – {fmtLargo(addDays(WEEK_START, conDom ? 6 : 5))}
+          {conDom && <span className="text-xs" style={{ color: muted, fontWeight: 400 }}>· incluye lo que trabajaste el domingo (sin meta)</span>}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: `2px solid ${forest}` }}>
                 <th className="py-1.5 pr-2"></th>
-                {DAYS.map((d) => <th key={d} className="py-1.5 px-1 text-center font-medium" style={{ color: forest }}>{d}</th>)}
+                {dias.map((d) => <th key={d} className="py-1.5 px-1 text-center font-medium" style={{ color: d === "Dom" ? amber : forest }}>{d}</th>)}
                 <th className="py-1.5 pl-2 text-right" style={{ color: forest }}>Total</th>
               </tr>
             </thead>
             <tbody>
               {metricas.map((m) => {
-                const meta = (metas[m.key]?.[me.id] || zeros()).slice(0, NDIAS);
-                const hecho = DAYS.map((_, i) => { const d = addDays(WEEK_START, i); return hechoFor(vctx, m.key, me.id, d, d); });
+                const meta = [...(metas[m.key]?.[me.id] || zeros()).slice(0, NDIAS), ...(conDom ? [0] : [])];
+                const hecho = dias.map((_, i) => { const d = addDays(WEEK_START, i); return hechoFor(vctx, m.key, me.id, d, d); });
                 return (
                   <React.Fragment key={m.key}>
                     <tr style={{ borderTop: `1px solid ${line}` }}>
@@ -1662,13 +2048,15 @@ function VendedoraPanel({ ctx, me }) {
         )}
       </div>
 
+      <RegistroAppVend ctx={ctx} me={me} />
+
       {vis.asistencia === "todas" ? (
         <div className="p-5 mb-4" style={card}>
           <H>Mi asistencia · período {cicloLabel(c)}</H>
           <div className="text-sm flex justify-between" style={{ color: ink }}>
             <span>Presentes: {presentes.length}</span>
-            <span>Retrasos: {presentes.filter((a) => a.entrada > LATE_AFTER).length}</span>
-            <span>Faltas: {Math.max(0, workdays(cyA, cyB) - presentes.length)}</span>
+            <span>Retrasos: {presentes.filter((a) => esTarde(ctx, a)).length}</span>
+            <span>Faltas: {esLibre(ctx, me.id) ? "—" : Math.max(0, workdays(cyA, cyB) - presentes.length)}</span>
           </div>
         </div>
       ) : <Locked label="Asistencia" />}
@@ -1699,6 +2087,12 @@ function VendedoraPanel({ ctx, me }) {
   );
 }
 
+const NOMBRES_CAMBIO = {
+  asist: "Asistencia", usuarios: "Usuarios", horario: "Horario", tienda: "Ubicación de la tienda", fbLog: "Facebook",
+  appLog: "Registro APP", puntos: "Puntos de mejora", metas: "Metas", metasCuenta: "Metas", vis: "Visibilidad",
+  rules: "Bonificaciones", pesos: "Bonificaciones", extra: "Bonificaciones", ventas: "Ventas", cuentas: "Cuentas", categorias: "Categorías",
+};
+
 // ---------- App raíz (solo vista previa) ----------
 export default function App() {
   const [view, setView] = useState("login");
@@ -1708,12 +2102,21 @@ export default function App() {
   const [D, setD] = useState(estadoInicial);
   const setDraft = (k, v) => setD((p) => ({ ...p, [k]: typeof v === "function" ? v(p[k]) : v }));
   const dirty = (ks) => ks.some((k) => D[k] !== S[k]);
+  // aplica un cambio al instante (por ejemplo una marca de entrada/salida) sin esperar a "Actualizar"
+  const apply = (k, fn) => {
+    const nv = fn(S[k]);
+    setS((p) => ({ ...p, [k]: nv }));
+    setD((p) => ({ ...p, [k]: p[k] === S[k] ? nv : fn(p[k]) }));
+  };
+  const pendientes = Object.keys(D).filter((k) => D[k] !== S[k]);
+  const saveAll = () => setS(D);
+  const discard = () => setD(S);
   const save = (ks) => setS((p) => { const n = { ...p }; ks.forEach((k) => { n[k] = D[k]; }); return n; });
 
   const ctx = {
     ...S,
     metas: effMetas(S.metas, S.metasCuenta, S.cuentas),
-    S, D, setDraft, dirty, save, auditoria: auditoriaInit,
+    S, D, setDraft, apply, dirty, save, auditoria: auditoriaInit,
   };
   const me = vendedoras.find((v) => v.id === viewerId);
 
@@ -1741,6 +2144,16 @@ export default function App() {
       {view === "admin" && <AdminPanel ctx={ctx} esAdmin />}
       {view === "supervisora" && <AdminPanel key="sup" ctx={{ ...ctx, esAdmin: false }} esAdmin={false} />}
       {view === "vendedora" && <VendedoraPanel ctx={ctx} me={me} />}
+
+      {/* Barra general: guarda CUALQUIER campo editado, en el bloque de la administradora y en el de la vendedora */}
+      {view !== "login" && pendientes.length > 0 && (
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-4 z-50 flex items-center gap-3 px-4 py-3 text-sm flex-wrap justify-center"
+          style={{ background: forest, color: "#fff", boxShadow: "0 6px 24px rgba(0,0,0,.25)", maxWidth: "94vw" }}>
+          <span>● Cambios sin guardar en: <b>{[...new Set(pendientes.map((k) => NOMBRES_CAMBIO[k] || k))].join(", ")}</b></span>
+          <button onClick={saveAll} className="px-3 py-1.5 text-sm flex items-center gap-1.5" style={{ background: amber, color: "#fff" }}><RefreshCw size={14} /> Actualizar todo</button>
+          <button onClick={discard} className="px-3 py-1.5 text-sm" style={{ border: "1px solid #9FC2B4", color: "#fff" }}>Descartar</button>
+        </div>
+      )}
     </div>
   );
 }

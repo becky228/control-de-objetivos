@@ -1,3 +1,4 @@
+import { esTardeEntrada, HORARIO_DEFECTO } from "./horario.js";
 import { addDays, maxISO, minISO, dow, weekStartOf, sum, cycleFor } from "./dates.js";
 
 // Valor de meta vigente para un día concreto, a partir de las filas versionadas.
@@ -27,7 +28,7 @@ export function hechoApp(appLog, vendedoraId, a, b) {
 const tier = (p, c) => (p >= 100 ? c.a : p >= c.min ? c.b : c.c);
 
 // Calcula el bono de una vendedora para su período de pago actual.
-export function computeBonoVendedora(v, { metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig, todayISO }) {
+export function computeBonoVendedora(v, { metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig, todayISO, horario }) {
   const c = cycleFor(v.ingreso_fecha, todayISO);
   const a = maxISO(c.start, v.ingreso_fecha), b = minISO(c.end, todayISO);
 
@@ -41,8 +42,8 @@ export function computeBonoVendedora(v, { metasGlobales, fbLog, appLog, asist, p
   const vt = ventas.find((x) => x.vendedora_id === v.id && x.periodo_inicio === c.start) || { meta: 0, logrado: 0 };
   const ventasP = vt.meta ? (vt.logrado / vt.meta) * 100 : 100;
 
-  const LATE_AFTER = "08:05";
-  const retr = asist.filter((x) => x.user_id === v.id && x.fecha >= a && x.fecha <= b && x.hora_entrada && x.hora_entrada > LATE_AFTER).length;
+  // retraso = primera entrada del día posterior a la entrada de SU turno + tolerancia (turno libre: no hay retraso)
+  const retr = asist.filter((x) => x.user_id === v.id && x.fecha >= a && x.fecha <= b && esTardeEntrada(horario || HORARIO_DEFECTO, v, x.hora_entrada)).length;
   const rp = bonoConfig.puntualidad;
   const punt = retr <= rp.p1 ? rp.p1pct : retr <= rp.p2 ? rp.p2pct : rp.p3pct;
 

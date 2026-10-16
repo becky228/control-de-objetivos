@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { SectionHeader, LedgerTable, NumIn, SaveBtn, COLORS } from "../../components/ui.jsx";
-import { fetchVendedoras, fetchMetasGlobales, fetchFbLog, fetchRegistroApp, fetchAsistencia, fetchPuntos, fetchVentas, fetchBonoConfig, todayISO } from "../../lib/api.js";
+import { fetchVendedoras, fetchMetasGlobales, fetchFbLog, fetchRegistroApp, fetchAsistencia, fetchPuntos, fetchVentas, fetchBonoConfig, fetchHorario, todayISO } from "../../lib/api.js";
 import { computeBonoVendedora } from "../../lib/bono.js";
 import { supabase } from "../../lib/supabase.js";
 import { cycleFor, cicloLabel } from "../../lib/dates.js";
@@ -15,10 +15,10 @@ export default function Bonificaciones() {
   const cargar = async () => {
     setLoading(true);
     const vendedoras = await fetchVendedoras();
-    const [metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig] = await Promise.all([
-      fetchMetasGlobales(vendedoras.map((v) => v.id)), fetchFbLog(), fetchRegistroApp(), fetchAsistencia(), fetchPuntos(), fetchVentas(), fetchBonoConfig(),
+    const [metasGlobales, fbLog, appLog, asist, puntos, ventas, bonoConfig, horario] = await Promise.all([
+      fetchMetasGlobales(vendedoras.map((v) => v.id)), fetchFbLog(), fetchRegistroApp(), fetchAsistencia(), fetchPuntos(), fetchVentas(), fetchBonoConfig(), fetchHorario().catch(() => null),
     ]);
-    setState({ vendedoras, metasGlobales, fbLog, appLog, asist, puntos, ventas });
+    setState({ vendedoras, metasGlobales, fbLog, appLog, asist, puntos, ventas, horario });
     setCfg(JSON.parse(JSON.stringify(bonoConfig)));
     setVentasDraft({});
     setLoading(false);

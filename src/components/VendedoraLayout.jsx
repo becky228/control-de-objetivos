@@ -7,6 +7,7 @@ import InstallButton from "./InstallButton.jsx";
 const nav = [
   { to: "/vendedora", label: "Inicio", end: true },
   { to: "/vendedora/facebook", label: "Facebook" },
+  { to: "/vendedora/registro-app", label: "App" },
   { to: "/vendedora/metas", label: "Metas" },
   { to: "/vendedora/puntos", label: "Puntos" },
   { to: "/vendedora/bono", label: "Bono" },

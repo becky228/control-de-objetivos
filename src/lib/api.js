@@ -158,3 +158,32 @@ export async function fetchAuditoria({ vid } = {}) {
 
 export const currentWeekStart = (todayISO) => weekStartOf(todayISO);
 export const todayISO = () => isoToday(); // fecha LOCAL (antes usaba UTC y a partir de las 20:00 en Bolivia ya era "mañana")
+
+// ---------- Horario, turnos y marcas de entrada/salida ----------
+export async function fetchHorario() {
+  const [t, c] = await Promise.all([
+    supabase.from("turnos").select("*").order("id"),
+    supabase.from("horario_config").select("*").eq("id", 1).maybeSingle(),
+  ]);
+  if (t.error) throw t.error;
+  const cfg = c.data || {};
+  return {
+    tolerancia: cfg.tolerancia_min ?? 5,
+    cierreMin: cfg.cierre_min ?? 10,
+    defecto: cfg.turno_defecto ?? t.data[0]?.id,
+    turnos: t.data.map((x) => ({ id: x.id, nombre: x.nombre, tipo: x.tipo, inicio: (x.hora_inicio || "").slice(0, 5), fin: (x.hora_fin || "19:00").slice(0, 5) })),
+  };
+}
+export async function fetchMarcas({ desde, hasta, vid } = {}) {
+  let q = supabase.from("asistencia_marcas").select("*").order("fecha", { ascending: false }).order("hora_entrada");
+  if (desde) q = q.gte("fecha", desde);
+  if (hasta) q = q.lte("fecha", hasta);
+  if (vid) q = q.eq("user_id", vid);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data;
+}
+// Cierra las salidas olvidadas (la base de datos también lo hace sola cada 10 minutos)
+export async function cerrarSalidasOlvidadas() {
+  try { await supabase.rpc("cerrar_salidas_olvidadas"); } catch (e) { /* no es crítico */ }
+}

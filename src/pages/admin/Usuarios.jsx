@@ -4,12 +4,15 @@ import { supabase } from "../../lib/supabase.js";
 import { supabaseAdmin } from "../../lib/supabaseAdmin.js";
 import { cycleFor, cicloLabel, fmtY, isoToday } from "../../lib/dates.js";
 import { useAuth } from "../../context/AuthProvider.jsx";
+import { fetchHorario } from "../../lib/api.js";
+import { HORARIO_DEFECTO } from "../../lib/horario.js";
 
 const ROLES = { vendedora: "Vendedora", supervisor: "Supervisora", admin: "Administradora" };
 const SIGUIENTE = { vendedora: "supervisor", supervisor: "admin" }; // "subir de rol"
 
 export default function Usuarios() {
   const [lista, setLista] = useState([]);
+  const [horario, setHorario] = useState(HORARIO_DEFECTO);
   const [loading, setLoading] = useState(true);
   const [abierto, setAbierto] = useState(false);
   const [confirm, setConfirm] = useState(null);
@@ -21,13 +24,14 @@ export default function Usuarios() {
   const [editErr, setEditErr] = useState("");
   const [verPass, setVerPass] = useState(false);
   const [msgPass, setMsgPass] = useState("");
-  const [f, setF] = useState({ nombre: "", correo: "", pass: "", ingreso: "", rol: "vendedora" });
+  const [f, setF] = useState({ nombre: "", correo: "", pass: "", ingreso: "", rol: "vendedora", turno_id: "" });
   const today = isoToday();
 
   const cargar = async () => {
     setLoading(true);
     const { data, error } = await supabase.from("profiles").select("*").order("nombre");
     if (!error) setLista(data);
+    setHorario(await fetchHorario().catch(() => HORARIO_DEFECTO));
     setLoading(false);
   };
   useEffect(() => { cargar(); }, []);
@@ -44,8 +48,8 @@ export default function Usuarios() {
       });
       if (error) throw error;
       // Por seguridad, todo usuario nuevo nace como vendedora; el rol lo asigna la administradora desde su sesión.
-      if (f.rol !== "vendedora" && nuevo?.user?.id) {
-        const { error: e3 } = await supabase.from("profiles").update({ rol: f.rol }).eq("id", nuevo.user.id);
+      if ((f.rol !== "vendedora" || f.turno_id) && nuevo?.user?.id) {
+        const { error: e3 } = await supabase.from("profiles").update({ rol: f.rol, ...(f.turno_id ? { turno_id: Number(f.turno_id) } : {}) }).eq("id", nuevo.user.id);
         if (e3) throw new Error("Se creó el usuario pero no se pudo asignar el rol: " + e3.message);
       }
       // que la nueva sesión creada por signUp en el cliente "admin" no quede activa
@@ -74,7 +78,7 @@ export default function Usuarios() {
       const orig = lista.find((x) => x.id === edit.id);
       if (edit.pass && edit.pass.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
       if (!edit.correo.trim()) throw new Error("El correo no puede quedar vacío.");
-      const cambios = { nombre: edit.nombre.trim(), ingreso_fecha: edit.ingreso_fecha, bono_base: Number(edit.bono_base) || 0 };
+      const cambios = { nombre: edit.nombre.trim(), ingreso_fecha: edit.ingreso_fecha, bono_base: Number(edit.bono_base) || 0, turno_id: edit.turno_id ? Number(edit.turno_id) : null, tarifa_hora: Number(edit.tarifa_hora) || 0 };
       if (edit.id !== yo.id) cambios.rol = edit.rol; // no te puedes quitar tu propio rol
       const { error } = await supabase.from("profiles").update(cambios).eq("id", edit.id);
       if (error) throw error;
@@ -142,6 +146,13 @@ export default function Usuarios() {
                 <option value="admin">Administradora</option>
               </select>
             </Field>
+            <Field label="Turno de trabajo">
+              <select className="w-full px-3 py-2 text-sm" style={{ border: `1px solid ${COLORS.line}`, background: "#FBFAF7" }}
+                value={f.turno_id} onChange={(e) => setF({ ...f, turno_id: e.target.value })}>
+                <option value="">Por defecto</option>
+                {horario.turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}{t.tipo === "libre" ? "" : ` · ${t.inicio}–${t.fin}`}</option>)}
+              </select>
+            </Field>
           </div>
           <p className="text-xs mt-3" style={{ color: COLORS.muted }}>
             La fecha de ingreso define su período de pago: cada mes cierra el día anterior a su fecha de ingreso.
@@ -173,6 +184,16 @@ export default function Usuarios() {
                 <option value="admin">Administradora</option>
               </select>
             </Field>
+            <Field label="Turno de trabajo">
+              <select className="w-full px-3 py-2 text-sm" style={{ border: `1px solid ${COLORS.line}`, background: "#FBFAF7" }}
+                value={edit.turno_id ?? ""} onChange={(e) => setEdit({ ...edit, turno_id: e.target.value })}>
+                <option value="">Por defecto</option>
+                {horario.turnos.map((t) => <option key={t.id} value={t.id}>{t.nombre}{t.tipo === "libre" ? "" : ` · ${t.inicio}–${t.fin}`}</option>)}
+              </select>
+            </Field>
+            {(horario.turnos.find((t) => t.id === (edit.turno_id ? Number(edit.turno_id) : horario.defecto)) || {}).tipo === "libre" && (
+              <Field label="Tarifa por hora (Bs)"><TextInput type="number" value={edit.tarifa_hora ?? 0} onChange={(e) => setEdit({ ...edit, tarifa_hora: e.target.value })} /></Field>
+            )}
             <Field label="Estado">
               <select disabled={edit.id === yo.id} className="w-full px-3 py-2 text-sm disabled:opacity-60" style={{ border: `1px solid ${COLORS.line}`, background: "#FBFAF7" }}
                 value={edit.estado} onChange={(e) => setEdit({ ...edit, estado: e.target.value, baja_fecha: e.target.value === "Baja" ? (edit.baja_fecha || today) : null })}>
@@ -204,13 +225,13 @@ export default function Usuarios() {
 
       {loading ? <p className="text-sm" style={{ color: COLORS.muted }}>Cargando…</p> : (
         <LedgerTable
-          columns={["Nombre", "Correo", "Rol", "Fecha de ingreso", "Período de pago actual", "Estado", ""]}
+          columns={["Nombre", "Correo", "Rol", "Turno", "Fecha de ingreso", "Período de pago actual", "Estado", ""]}
           rows={lista.map((u) => [
-            u.nombre, u.correo, ROLES[u.rol] || u.rol, fmtY(u.ingreso_fecha),
+            u.nombre, u.correo, ROLES[u.rol] || u.rol, (horario.turnos.find((t) => t.id === (u.turno_id ?? horario.defecto)) || {}).nombre || "—", fmtY(u.ingreso_fecha),
             u.estado === "Activa" ? cicloLabel(cycleFor(u.ingreso_fecha, today)) : "—",
             u.estado === "Activa" ? <Tag tone="good">Activa</Tag> : <Tag tone="bad">Baja · {u.baja_fecha ? fmtY(u.baja_fecha) : ""}</Tag>,
             <span className="flex items-center gap-2 flex-wrap">
-              <GhostBtn onClick={() => { setEditErr(""); setEdit({ id: u.id, nombre: u.nombre, correo: u.correo, ingreso_fecha: u.ingreso_fecha, bono_base: u.bono_base, rol: u.rol, estado: u.estado, baja_fecha: u.baja_fecha, pass: "" }); setVerPass(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Editar</GhostBtn>
+              <GhostBtn onClick={() => { setEditErr(""); setEdit({ id: u.id, nombre: u.nombre, correo: u.correo, ingreso_fecha: u.ingreso_fecha, bono_base: u.bono_base, rol: u.rol, estado: u.estado, baja_fecha: u.baja_fecha, turno_id: u.turno_id ?? "", tarifa_hora: u.tarifa_hora ?? 0, pass: "" }); setVerPass(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Editar</GhostBtn>
               {u.estado === "Activa" && SIGUIENTE[u.rol] && u.id !== yo.id && (
                 subir === u.id
                   ? <span className="text-xs flex items-center gap-2">¿Subir a {ROLES[SIGUIENTE[u.rol]]}?
